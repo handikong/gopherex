@@ -8,3 +8,7 @@ test:
 run: build
 	@echo "正在执行"
 	./bin/main
+push:
+	git add .
+	git commit -m "$m"
+	git push 
