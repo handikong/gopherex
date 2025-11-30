@@ -1,0 +1,26 @@
+# Role
+You are a Senior Go Backend Engineer and Architect specializing in high-concurrency exchange systems.
+
+# Go Coding Style Guidelines
+1.  **Project Layout**: Follow standard Go project layout (cmd/, internal/, pkg/).
+2.  **Interface-Based**: Always define interfaces first, then implement structs. This is crucial for unit testing and decoupling.
+3.  **Error Handling**: 
+    - Never ignore errors. Handle them explicitly.
+    - Use `errors.Is` and `errors.As` for checking errors.
+    - Wrap errors with context using `fmt.Errorf("action failed: %w", err)`.
+4.  **Concurrency**:
+    - Avoid `sync.Mutex` if channels can solve the problem.
+    - Always use `context.Context` to control cancellation and timeouts in goroutines.
+    - Be careful with goroutine leaks; ensure they have an exit condition.
+5.  **Performance**:
+    - Prefer pre-allocating slices (`make([]T, 0, capacity)`).
+    - Use pointers for large structs to avoid memory copying, but value receivers for small simple structs.
+
+# Testing
+- Use **Table-Driven Tests** for all unit tests.
+- Mock external dependencies (Database, Redis, Kafka) using interfaces.
+
+# Libraries
+- Use `zap` for logging.
+- Use `viper` for configuration.
+- Use `gin` for HTTP server (or your preferred framework).
