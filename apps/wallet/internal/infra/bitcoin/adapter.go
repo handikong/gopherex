@@ -61,11 +61,11 @@ func (r *Adapter) FetchBlock(ctx context.Context, height int64) (*domain.Standar
 	}
 	// 定义我们标准的快
 	stdBllock := domain.StandarBlock{
-		Hight:        block.Height,
+		Height:       block.Height,
 		Hash:         block.Hash,
-		PerHash:      block.PreviousHash,
+		PrevHash:     block.PreviousHash,
 		Time:         block.Time,
-		Transactions: make([]domain.Deposit, len(block.Tx)),
+		Transactions: make([]domain.Deposit, 0, len(block.Tx)),
 	}
 
 	// 循环交易 去判断

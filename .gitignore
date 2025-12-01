@@ -34,3 +34,5 @@ go.work.sum
 # bin 
 /bin/
 
+# 配置文件
+apps/wallet/etc

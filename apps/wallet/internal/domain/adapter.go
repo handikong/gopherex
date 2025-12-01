@@ -6,9 +6,9 @@ import (
 
 // 定义区块 屏蔽底层差距
 type StandarBlock struct {
-	Hight        int64     // 区块高度
+	Height       int64     // 区块高度
 	Hash         string    // 区块hash
-	PerHash      string    // 前一块hash
+	PrevHash     string    // 前一块hash
 	Time         int64     // 区块时间
 	Transactions []Deposit // 区块交易
 }
