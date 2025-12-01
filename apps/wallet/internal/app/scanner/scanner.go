@@ -74,9 +74,9 @@ func (e *Engine) Start(ctx context.Context) {
 		close(e.blockChan)
 	})
 	// 构造用户扫描的携程
-	// safe.Go(func() {
-	// 	e.Confirmer(ctx)
-	// })
+	safe.Go(func() {
+		e.Confirmer(ctx)
+	})
 
 	//  接受停止命令
 	<-ctx.Done()
@@ -216,13 +216,11 @@ func (e *Engine) Product(ctx context.Context) {
 				}
 				logger.Info(ctx, "发送block数据给消费者了")
 				// 5. 发送给消费者 改变数据
-
 				e.blockChan <- block
-				e.redisClinet.Del(ctx, lockKey)
 				// 6. 更新内存状态
 				currentHeight = nextHeight
 				currentHash = block.Hash
-
+				// e.redisClinet.Del(ctx, lockKey)
 			}
 		}
 	}

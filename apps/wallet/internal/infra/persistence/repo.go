@@ -77,12 +77,17 @@ func (r *Repo) Rollback(ctx context.Context, chain string, height int64) error {
 			return err
 		}
 
+		updates := map[string]interface{}{
+			"current_height": height - 1,
+			"current_hash":   "", // <--- 关键！
+		}
+
 		// 2. 将 scans 表的游标回退到 height - 1
 		// 注意：这里我们没法知道 height-1 的 hash 是什么，暂时留空或者需要业务层传进来
 		// 简单处理：只回退高度，Hash 留空 (下次扫描会重新覆盖)
 		if err := tx.Table("scans").
 			Where("chain = ?", chain).
-			Update("current_height", height-1).Error; err != nil {
+			Updates(updates).Error; err != nil {
 			return err
 		}
 
