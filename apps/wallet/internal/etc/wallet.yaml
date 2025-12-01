@@ -1,0 +1,22 @@
+Name: wallet-service
+
+# MySQL 配置
+Mysql:
+  # 注意：如果跑在 Docker 容器里，host 请用宿主机 IP 或者 Docker 网络名 (如 mysql-node)
+  # 如果是本地调试，用 127.0.0.1
+  DataSource: "root:123456@tcp(127.0.0.1:3307)/gopherex_wallet?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai"
+  MaxIdle: 10
+  MaxOpen: 100
+  MaxLifetime: 3600
+
+# Redis 配置
+Redis:
+  Addr: "127.0.0.1:6379"
+  Password: ""
+  DB: 0
+
+Bitcoin: 
+  Host: "127.0.0.1:18443"
+  User: "admin"
+  Pass: "123456"
+	

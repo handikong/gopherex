@@ -48,7 +48,7 @@ func (r *Adapter) GetBlockHeight(ctx context.Context) (int64, error) {
 }
 
 // 获取区块的数据
-func (r *Adapter) FetchBlock(ctx context.Context, height int64) (*domain.StandarBlock, error) {
+func (r *Adapter) FetchBlock(ctx context.Context, height int64) (*domain.StandardBlock, error) {
 	// 获取所有的区块
 	hash, err := r.rpcClinet.GetBlockHash(height)
 	if err != nil {
@@ -60,7 +60,7 @@ func (r *Adapter) FetchBlock(ctx context.Context, height int64) (*domain.Standar
 		return nil, err
 	}
 	// 定义我们标准的快
-	stdBllock := domain.StandarBlock{
+	stdBllock := domain.StandardBlock{
 		Height:       block.Height,
 		Hash:         block.Hash,
 		PrevHash:     block.PreviousHash,
