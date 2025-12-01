@@ -15,11 +15,12 @@ import (
 
 // 先定义数据结构
 type Config struct {
-	Chain         string        // "BTC" "ETH"
-	Interval      time.Duration //间隔扫描
-	ConfirmNum    int64         //  确认数量
-	StepBlock     uint8         // 每次跳跃多少个区块  一起扫描
-	ConsumerCount uint8         // 多少个消费者
+	Chain           string        // "BTC" "ETH"
+	Interval        time.Duration //间隔扫描Scaner
+	ConfirmNum      int64         //  确认数量
+	StepBlock       uint8         // 每次跳跃多少个区块  一起扫描
+	ConfirmInterval time.Duration // 间隔扫码确定充值
+	ConsumerCount   uint8         // 多少个消费者
 }
 
 type Engine struct {
@@ -72,6 +73,11 @@ func (e *Engine) Start(ctx context.Context) {
 		//  退出时关闭通道
 		close(e.blockChan)
 	})
+	// 构造用户扫描的携程
+	// safe.Go(func() {
+	// 	e.Confirmer(ctx)
+	// })
+
 	//  接受停止命令
 	<-ctx.Done()
 	// 等待所有消费者处理完
@@ -96,7 +102,7 @@ func (e *Engine) Consumer(ctx context.Context, workNum uint8) {
 			// 失败重试逻辑 (这里简单跳过，生产环境需要死信队列)
 			continue
 		}
-
+		logger.Info(ctx, fmt.Sprintf("写入数据库的数据%d,%s", block.Height, block.Hash))
 		// 2. 更新数据库游标 (Checkpoint)
 		// 在分布式环境下，这一步其实应该由 Handler 在事务里一起做。
 		// 如果 Handler 没做，这里补发一个 Update
@@ -136,13 +142,6 @@ func (e *Engine) Product(ctx context.Context) {
 				continue
 			}
 
-			// 最后区块确认检查
-			// 这里代码有问题 如果一次确认不通过 就卡死了
-			// 正确的做法是 如果还没通过 就放入未通过的区块
-			if chainHeight-nextHeight < e.config.ConfirmNum {
-				break
-			}
-
 			// 如果下一个区块小于 链上的区块  就循环追加区块
 			for nextHeight < chainHeight {
 				// 分布式锁  这里锁也有问题
@@ -159,6 +158,7 @@ func (e *Engine) Product(ctx context.Context) {
 				// 如果没抢到锁，说明别的节点在处理，或者已经处理过了
 				// 我们直接跳过这个块，去试探下一个 (蛙跳模式)
 				if !locked {
+					logger.Error(ctx, "Get tip height failed", zap.Error(err))
 					// 为了保证本地状态连续，我们还是得更新 currentHeight
 					// 但这里有个风险：如果别的节点处理失败了怎么办？
 					// 商业级方案通常配合 Kafka，这里为了简化 MVP，我们假设别的节点会成功
@@ -169,8 +169,13 @@ func (e *Engine) Product(ctx context.Context) {
 					// 这种策略适合 "主备模式" 或者是 "竞争消费模式"
 					break
 				}
+				logger.Info(ctx, fmt.Sprintf("当前获取的区块为%d", nextHeight))
+
 				// 获取区块
 				block, err := e.adapter.FetchBlock(ctx, nextHeight)
+				// 获取的数据为
+				logger.Info(ctx, fmt.Sprintf("获取的数据为%+v", block))
+
 				if err != nil {
 					logger.Error(ctx, "Fetch block failed", zap.Int64("height", nextHeight), zap.Error(err))
 					time.Sleep(time.Second)
@@ -181,6 +186,11 @@ func (e *Engine) Product(ctx context.Context) {
 				// 4. 🔥 核心：防分叉 (Reorg Check)
 				// 检查新块的父哈希是否等于我本地记录的当前哈希
 				// 如果是高度1（前面是0），或者是第一次启动（currentHash为空），则跳过检查
+
+				logger.Info(ctx, "当前的判断条件",
+					zap.Int64("currentHeight", currentHeight),
+					zap.String("currentHash", currentHash),
+					zap.String("PrevHash", block.PrevHash))
 				if currentHeight > 0 && currentHash != "" && block.PrevHash != currentHash {
 					logger.Warn(ctx, "🚨 FORK DETECTED! Reorg triggered",
 						zap.Int64("local_height", currentHeight),
@@ -205,14 +215,51 @@ func (e *Engine) Product(ctx context.Context) {
 					continue
 				}
 				logger.Info(ctx, "发送block数据给消费者了")
-				// 5. 发送给消费者
+				// 5. 发送给消费者 改变数据
+
 				e.blockChan <- block
 				e.redisClinet.Del(ctx, lockKey)
 				// 6. 更新内存状态
 				currentHeight = nextHeight
 				currentHash = block.Hash
+
 			}
 		}
 	}
 
+}
+
+// Confirmer 独立协程：定期检查 Pending 交易是否成熟
+func (e *Engine) Confirmer(ctx context.Context) {
+	logger.Info(ctx, "🛡️ Confirmer started")
+	// 每 10 秒或者是配置的时间检查一次
+	ticker := time.NewTicker(e.config.ConfirmInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// 1. 获取当前链上最新高度
+			tipHeight, err := e.adapter.GetBlockHeight(ctx)
+			if err != nil {
+				logger.Error(ctx, "Confirmer get tip failed", zap.Error(err))
+				continue
+			}
+
+			// 2. 批量更新数据库
+			// 把所有 (tip - height >= 6) 的 Pending 记录改成 Confirmed
+			count, err := e.repository.ConfirmDeposits(ctx, e.config.Chain, tipHeight, e.config.ConfirmNum)
+			if err != nil {
+				logger.Error(ctx, "Confirmer update db failed", zap.Error(err))
+				continue
+			}
+
+			if count > 0 {
+				logger.Info(ctx, "✅ 充值到账确认", zap.Int64("count", count), zap.Int64("current_tip", tipHeight))
+				// TODO: 这里可以发 Kafka 通知账户系统加钱
+			}
+		}
+	}
 }

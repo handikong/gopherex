@@ -75,10 +75,11 @@ func main() {
 	// 4. 初始化 Scanner Engine
 	btcEngine := scanner.New(
 		&scanner.Config{
-			Chain:         "BTC",
-			Interval:      3 * time.Second,
-			ConfirmNum:    1, // Regtest 1个确认就够
-			ConsumerCount: 5,
+			Chain:           "BTC",
+			Interval:        3 * time.Second,
+			ConfirmInterval: 10 * time.Second,
+			ConfirmNum:      1, // Regtest 1个确认就够
+			ConsumerCount:   5,
 		},
 		rdb,
 		btcAdapter,

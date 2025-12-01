@@ -72,3 +72,6 @@ func (h *DepositHandler) HandlerBlock(ctx context.Context, block *domain.Standar
 
 	return nil
 }
+
+// ConfirmDeposits 批量确认充值
+// update deposits set status = 1 where chain = ? and status = 0 and (? - block_height) >= ?

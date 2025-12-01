@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"gopherex.com/apps/wallet/internal/domain"
 	"gopherex.com/pkg/xerr"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -87,4 +88,27 @@ func (r *Repo) Rollback(ctx context.Context, chain string, height int64) error {
 
 		return nil
 	})
+}
+
+// ConfirmDeposits 批量确认充值
+func (r *Repo) ConfirmDeposits(ctx context.Context, chain string, currentHeight int64, confirmNum int64) (int64, error) {
+	// 1. 先在 Go 里算出"只要小于等于这个高度的块，都算确认了"
+	// 例如：当前106，需要6个确认。
+	// safeHeight = 106 - 6 + 1 = 101。
+	// 也就是 101, 100, 99... 这些块里的交易都安全了。
+	safeHeight := currentHeight - confirmNum + 1
+
+	// 2. 执行更新
+	// 现在的 SQL 变成了： block_height <= ?
+	// MySQL 可以完美利用 block_height 字段上的索引进行范围查询！
+	res := r.db.WithContext(ctx).Model(&domain.Deposit{}).
+		Where("chain = ? AND status = ? AND block_height <= ?",
+			chain, domain.DepositStatusPending, safeHeight).
+		Update("status", domain.DepositStatusConfirmed)
+
+	if res.Error != nil {
+		return 0, res.Error
+	}
+
+	return res.RowsAffected, nil
 }
