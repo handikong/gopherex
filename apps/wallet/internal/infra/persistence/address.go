@@ -7,17 +7,35 @@ import (
 	"gopherex.com/apps/wallet/internal/domain"
 	"gopherex.com/pkg/xerr"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
+
+// ========== AddressRepo 接口实现 ==========
 
 // Save 保存地址（实现 domain.AddressRepo 接口）
 func (r *Repo) Save(ctx context.Context, addr *domain.UserAddress) error {
-	// 使用 Clauses 忽略重复键错误 (INSERT IGNORE)
-	// 防止用户重复点击生成导致报错
-	err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
-		DoNothing: true,
-	}).Create(addr).Error
+	db := r.db
+	// 如果 context 里有事务对象，就用事务对象
+	if tx, ok := ctx.Value("tx_db").(*gorm.DB); ok {
+		db = tx
+	}
 
+	// 检查是否已存在相同 user_id 和 chain 的记录
+	var existing domain.UserAddress
+	err := db.WithContext(ctx).
+		Where("user_id = ? AND chain = ?", addr.UserID, addr.Chain).
+		First(&existing).Error
+
+	if err == nil {
+		// 记录已存在，返回错误
+		return xerr.New(xerr.DbError, fmt.Sprintf("address already exists for user_id=%d, chain=%s", addr.UserID, addr.Chain))
+	}
+	if err != gorm.ErrRecordNotFound {
+		// 其他数据库错误
+		return xerr.New(xerr.DbError, fmt.Sprintf("check existing address failed: %v", err))
+	}
+
+	// 记录不存在，执行插入
+	err = db.WithContext(ctx).Create(addr).Error
 	if err != nil {
 		return xerr.New(xerr.DbError, fmt.Sprintf("save address failed: %v", err))
 	}

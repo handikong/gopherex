@@ -17,6 +17,7 @@ const (
 
 type HashStr []byte
 type Deposit struct {
+	ID int64 // 主键
 	// 核心唯一标识: Chain + TxHash + LogIndex
 	TxHash      string          // hash地址
 	FromAddress string          // 发送方

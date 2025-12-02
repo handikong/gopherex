@@ -4,6 +4,7 @@ package hdwallet
 import (
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -18,6 +19,8 @@ type HDWallet struct {
 	masterKey *hdkeychain.ExtendedKey
 	// 网络地址
 	btcParams *chaincfg.Params
+	// 互斥锁，保护并发访问（因为 hdkeychain.ExtendedKey 不是线程安全的）
+	mu sync.Mutex
 }
 
 // 实例化结构
@@ -40,6 +43,10 @@ func New(mnemonic string, netParams *chaincfg.Params) (*HDWallet, error) {
 }
 
 func (w *HDWallet) DeriveAddress(coinType uint32, accountIdx uint32) (string, string, error) {
+	// 加锁保护，因为 hdkeychain.ExtendedKey 不是线程安全的
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	// 按照bip44的派生地址  生成对应地址
 	// BIP44 路径: m / 44' / coin_type' / 0' / 0 / account_index
 	// 1. 逐步推导 (Hardened = +0x80000000)

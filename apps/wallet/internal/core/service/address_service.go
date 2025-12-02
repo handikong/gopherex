@@ -28,35 +28,29 @@ func NewAddressService(db *gorm.DB, repo domain.AddressRepo, wallet *hdwallet.HD
 // GenerateAddress 为用户生成全套地址 (BTC + ETH)
 func (s *AddressService) GenerateAddress(ctx context.Context, uid int64) (string, string, error) {
 	// 1. 计算 BTC 地址
-	btcAddr, _, err := s.wallet.DeriveAddress(0, uint32(uid))
+	btcAddr, _, err := s.wallet.DeriveAddress(domain.CoinTypeBTC, uint32(uid))
 	if err != nil {
 		return "", "", fmt.Errorf("derive btc failed: %w", err)
 	}
 
 	// 2. 计算 ETH 地址
-	ethAddr, _, err := s.wallet.DeriveAddress(60, uint32(uid))
+	ethAddr, _, err := s.wallet.DeriveAddress(domain.CoinTypeETH, uint32(uid))
 	if err != nil {
 		return "", "", fmt.Errorf("derive eth failed: %w", err)
 	}
 
-	// 3. 开启事务，同时保存
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		// 这里比较 tricky：因为 persistence.Repo 绑定了 db 实例
-		// 在事务中，我们应该使用 tx 及其关联的 repo。
-		// 简单起见，我们直接用 gorm 操作，或者你也给 Repo 加一个 WithTx 方法。
-		// 这里为了演示清晰，直接用 tx Create。
-
+	// // 3. 开启事务，同时保存
+	err = s.repo.Transaction(ctx, func(txCtx context.Context) error {
 		// 保存 BTC
-		if err := tx.Create(&domain.UserAddress{
+		if err := s.repo.Save(txCtx, &domain.UserAddress{
 			UserID: uid, Chain: "BTC", Address: btcAddr, PkhIdx: int(uid),
-		}).Error; err != nil {
+		}); err != nil {
 			return err
 		}
-
 		// 保存 ETH
-		if err := tx.Create(&domain.UserAddress{
+		if err := s.repo.Save(txCtx, &domain.UserAddress{
 			UserID: uid, Chain: "ETH", Address: ethAddr, PkhIdx: int(uid),
-		}).Error; err != nil {
+		}); err != nil {
 			return err
 		}
 		return nil

@@ -38,4 +38,6 @@ type Repository interface {
 
 	// 🔥 新增：将符合确认数的 Pending 记录更新为 Confirmed
 	ConfirmDeposits(ctx context.Context, chain string, currentHeight int64, confirmNum int64) (int64, error)
+	// UpdateDepositStatusToConfirmed 将充值记录状态改为 Confirmed
+	UpdateDepositStatusToConfirmed(ctx context.Context, id int64) error
 }

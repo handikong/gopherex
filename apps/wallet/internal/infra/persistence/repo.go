@@ -19,8 +19,21 @@ func New(db *gorm.DB) *Repo {
 	return &Repo{db: db}
 }
 
-// 确保 Repo 实现了 domain.AddressRepo 接口
-var _ domain.AddressRepo = (*Repo)(nil)
+// 确保 Repo 实现了所有接口
+var (
+	_ domain.AddressRepo = (*Repo)(nil)
+	_ domain.AssetRepo   = (*Repo)(nil)
+	_ domain.Repository  = (*Repo)(nil)
+)
+
+// Transaction 实现事务
+func (r *Repo) Transaction(ctx context.Context, fn func(ctx context.Context) error) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 把 tx 注入到 context 中
+		txCtx := context.WithValue(ctx, "tx_db", tx)
+		return fn(txCtx)
+	})
+}
 
 // GetLastCursor 获取指定链的最后扫描高度和Hash
 func (r *Repo) GetLastCursor(ctx context.Context, chain string) (int64, string, error) {
@@ -119,4 +132,31 @@ func (r *Repo) ConfirmDeposits(ctx context.Context, chain string, currentHeight 
 	}
 
 	return res.RowsAffected, nil
+}
+
+// ========== Repository 接口实现（补充方法） ==========
+
+// UpdateDepositStatusToConfirmed 将充值记录状态改为 Confirmed（实现 domain.Repository 接口）
+// 必须确保是从 Pending -> Confirmed，防止重复处理
+func (r *Repo) UpdateDepositStatusToConfirmed(ctx context.Context, id int64) error {
+	db := r.db
+	if tx, ok := ctx.Value("tx_db").(*gorm.DB); ok {
+		db = tx
+	}
+
+	res := db.WithContext(ctx).Model(&domain.Deposit{}).
+		Where("id = ? AND status = ?", id, domain.DepositStatusPending). // 🔒 乐观锁：确保之前是 Pending
+		Update("status", domain.DepositStatusConfirmed)
+
+	if res.Error != nil {
+		return xerr.New(xerr.DbError, fmt.Sprintf("update status failed: %v", res.Error))
+	}
+
+	if res.RowsAffected == 0 {
+		// 如果影响行数为 0，说明该记录可能已经被别的线程处理过了（状态不是 Pending）
+		// 返回一个特定错误，或者直接 nil (视业务为幂等成功)
+		return fmt.Errorf("deposit %d status is not pending or not found", id)
+	}
+
+	return nil
 }

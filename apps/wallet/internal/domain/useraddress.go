@@ -23,4 +23,6 @@ type AddressRepo interface {
 	GetUserIDByAddress(ctx context.Context, address string) (int64, error)
 	// 根据UserId获取
 	GetUserById(ctx context.Context, id int) (*UserAddress, error)
+	// 新增：允许在事务中执行业务逻辑
+	Transaction(ctx context.Context, fn func(ctx context.Context) error) error
 }
