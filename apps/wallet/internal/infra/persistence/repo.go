@@ -19,6 +19,9 @@ func New(db *gorm.DB) *Repo {
 	return &Repo{db: db}
 }
 
+// 确保 Repo 实现了 domain.AddressRepo 接口
+var _ domain.AddressRepo = (*Repo)(nil)
+
 // GetLastCursor 获取指定链的最后扫描高度和Hash
 func (r *Repo) GetLastCursor(ctx context.Context, chain string) (int64, string, error) {
 	// 对应数据库表 scans

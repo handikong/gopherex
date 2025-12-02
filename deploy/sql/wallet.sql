@@ -43,3 +43,39 @@ VALUES
 ('BTC', 0, ''),
 ('ETH', 0, '')
 ON DUPLICATE KEY UPDATE chain=chain;
+
+-- ==========================================
+-- 3. [新增] 用户充值地址表 (Day 15 核心)
+-- 记录每个用户在每条链上的专属充值地址
+-- ==========================================
+CREATE TABLE IF NOT EXISTS `user_addresses` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `user_id` bigint NOT NULL COMMENT '用户ID',
+  `chain` varchar(10) NOT NULL COMMENT '链: BTC, ETH',
+  `address` varchar(100) NOT NULL COMMENT '生成的充值地址',
+  `pkh_idx` int NOT NULL COMMENT 'HD钱包路径索引 (通常=UserID)',
+  `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  -- 保证每个用户在每条链只有一个地址
+  UNIQUE KEY `uniq_user_chain` (`user_id`, `chain`),
+  -- 保证地址不重复分配
+  UNIQUE KEY `uniq_address` (`address`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户充值地址表';
+
+-- ==========================================
+-- 4. [新增] 用户资产表 (核心账本)
+-- 记录用户持有的每种币的余额
+-- ==========================================
+CREATE TABLE IF NOT EXISTS `user_assets` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `user_id` bigint NOT NULL COMMENT '用户ID',
+  `coin_symbol` varchar(20) NOT NULL COMMENT '币种: BTC, ETH, USDT',
+  `available` decimal(36,18) NOT NULL DEFAULT '0.000000000000000000' COMMENT '可用余额',
+  `frozen` decimal(36,18) NOT NULL DEFAULT '0.000000000000000000' COMMENT '冻结余额(下单/提现冻结)',
+  `version` bigint NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
+  `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  -- 一个用户一种币只有一行记录
+  UNIQUE KEY `uniq_user_coin` (`user_id`, `coin_symbol`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户资产表';
