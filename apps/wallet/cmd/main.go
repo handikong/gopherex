@@ -15,7 +15,9 @@ import (
 	"gopherex.com/apps/wallet/config"
 	"gopherex.com/apps/wallet/internal/app/scanner"
 	"gopherex.com/apps/wallet/internal/core/handler"
+	"gopherex.com/apps/wallet/internal/core/service"
 	"gopherex.com/apps/wallet/internal/infra/bitcoin"
+	"gopherex.com/apps/wallet/internal/infra/ethereum"
 	"gopherex.com/apps/wallet/internal/infra/persistence"
 	"gopherex.com/pkg/logger"
 	"gopherex.com/pkg/orm"
@@ -71,9 +73,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("BTC Adapter init failed: %v", err)
 	}
+	assetService := service.NewAssetService(repo)
 
 	// 4. 初始化 Scanner Engine
-	btcEngine := scanner.New(
+	_ = scanner.New(
 		&scanner.Config{
 			Chain:           "BTC",
 			Interval:        3 * time.Second,
@@ -85,10 +88,33 @@ func main() {
 		btcAdapter,
 		depositHandler,
 		repo,
+		assetService,
+	)
+
+	ethAdapter, err := ethereum.New(c.Bitcoin.EthUrl)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// 2. 初始化 ETH 引擎
+	ethEngine := scanner.New(
+		&scanner.Config{
+			Chain:           "ETH",
+			Interval:        3 * time.Second,
+			ConfirmInterval: 10 * time.Second,
+			ConfirmNum:      6, // ETH 需要 6-12 个确认
+			ConsumerCount:   5,
+		},
+		rdb,
+		ethAdapter,
+		depositHandler, // 复用同一个 Handler!
+		repo,
+		assetService,
 	)
 
 	// 5. 启动引擎
-	go btcEngine.Start(ctx)
+	// go btcEngine.Start(ctx)
+	go ethEngine.Start(ctx)
 
 	// 6. 优雅退出
 	sigChan := make(chan os.Signal, 1)

@@ -22,8 +22,9 @@ type Config struct {
 
 	// 新增 Bitcoin 配置
 	Bitcoin struct {
-		Host string
-		User string
-		Pass string
+		Host   string
+		User   string
+		Pass   string
+		EthUrl string
 	}
 }

@@ -11,16 +11,12 @@ import (
 
 // AssetService 资产服务
 type AssetService struct {
-	addressRepo domain.AddressRepo // 地址相关操作
-	assetRepo   domain.AssetRepo   // 资产相关操作
-	depositRepo domain.Repository  // 充值记录相关操作
+	repo domain.WalletRepo
 }
 
-func NewAssetService(addressRepo domain.AddressRepo, assetRepo domain.AssetRepo, depositRepo domain.Repository) *AssetService {
+func NewAssetService(wallRepo domain.WalletRepo) *AssetService {
 	return &AssetService{
-		addressRepo: addressRepo,
-		assetRepo:   assetRepo,
-		depositRepo: depositRepo,
+		repo: wallRepo,
 	}
 }
 
@@ -34,7 +30,7 @@ func (s *AssetService) SettleDeposit(ctx context.Context, deposit *domain.Deposi
 
 	// 1. 查找用户 ID
 	// 这一步是只读的，可以不在事务里，减少锁时间
-	uid, err := s.addressRepo.GetUserIDByAddress(ctx, deposit.ToAddress)
+	uid, err := s.repo.GetUserIDByAddress(ctx, deposit.ToAddress)
 	if err != nil {
 		return fmt.Errorf("check user failed: %w", err)
 	}
@@ -47,15 +43,15 @@ func (s *AssetService) SettleDeposit(ctx context.Context, deposit *domain.Deposi
 
 	// 2. 开启事务 (Transaction)
 	// 注意：由于所有接口都由同一个 Repo 实现，Transaction 方法在 AddressRepo 中
-	err = s.addressRepo.Transaction(ctx, func(txCtx context.Context) error {
+	err = s.repo.Transaction(ctx, func(txCtx context.Context) error {
 		// A. 修改充值记录状态 (Pending -> Confirmed)
 		// 如果这一步失败（比如已经被别人处理了），整个事务回滚
-		if err := s.depositRepo.UpdateDepositStatusToConfirmed(txCtx, deposit.ID); err != nil {
+		if err := s.repo.UpdateDepositStatusToConfirmed(txCtx, deposit.ID); err != nil {
 			return err
 		}
 
 		// B. 给用户加钱
-		if err := s.assetRepo.AddBalance(txCtx, uid, deposit.Symbol, deposit.Amount); err != nil {
+		if err := s.repo.AddBalance(txCtx, uid, deposit.Symbol, deposit.Amount); err != nil {
 			return err
 		}
 

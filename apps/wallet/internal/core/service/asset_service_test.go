@@ -33,7 +33,7 @@ func TestSettleDeposit(t *testing.T) {
 	repo := persistence.New(db)
 
 	// 创建 Service 实例
-	service := NewAssetService(repo, repo, repo)
+	service := NewAssetService(repo)
 
 	// 准备测试数据：创建一个用户地址
 	testUID := int64(1001)
@@ -213,7 +213,7 @@ func TestSettleDeposit_TransactionRollback(t *testing.T) {
 	require.NoError(t, err)
 
 	repo := persistence.New(db)
-	service := NewAssetService(repo, repo, repo)
+	service := NewAssetService(repo)
 
 	testUID := int64(2001)
 	testAddress := "bcrt1ql746qr38l85czxqfc3z8xxgeq4u4kjkgyn8nn8"
@@ -279,7 +279,7 @@ func TestSettleDeposit_Concurrent(t *testing.T) {
 	require.NoError(t, err)
 
 	repo := persistence.New(db)
-	service := NewAssetService(repo, repo, repo)
+	service := NewAssetService(repo)
 
 	// 准备测试数据：创建多个用户和充值记录（减少数量避免 SQLite 并发问题）
 	const numDeposits = 20
@@ -395,7 +395,7 @@ func TestSettleDeposit_ConcurrentSameDeposit(t *testing.T) {
 	require.NoError(t, err)
 
 	repo := persistence.New(db)
-	service := NewAssetService(repo, repo, repo)
+	service := NewAssetService(repo)
 
 	testUID := int64(6000)
 	testAddress := "bcrt1ql746qr38l85czxqfc3z8xxgeq4u4kjkgyn8nn8"

@@ -22,4 +22,6 @@ type UserAsset struct {
 type AssetRepo interface {
 	// AddBalance 给用户加钱 (支持不存在则创建)
 	AddBalance(ctx context.Context, uid int64, symbol string, amount decimal.Decimal) error
+	// 无论用户是否存在记录，都应返回一个 UserAsset 实例（或 nil）和 error
+	GetBalance(ctx context.Context, uid int64, symbol string) (*UserAsset, error)
 }

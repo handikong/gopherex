@@ -19,6 +19,17 @@ type ChainAdapter interface {
 	GetBlockHeight(ctx context.Context) (int64, error)
 	// 获取区块的数据
 	FetchBlock(ctx context.Context, height int64) (*StandardBlock, error)
+
+	// 🔥 新增：查询交易状态
+	// 输入：交易 Hash
+	// 输出：通用状态 (Confirmed/Failed/Pending)
+	GetTransactionStatus(ctx context.Context, hash string) (WithdrawStatus, error)
+
+	// 🔥 新增：提现发币接口
+	// 我们传入整个订单，Adapter 内部自己解析
+	// BTC: 只看 Amount 和 ToAddress
+	// ETH: 会看 Symbol (ETH 还是 USDT)
+	SendWithdrawal(ctx context.Context, order *Withdraw) (txHash string, err error)
 }
 
 // 充值处理接口
@@ -40,4 +51,6 @@ type Repository interface {
 	ConfirmDeposits(ctx context.Context, chain string, currentHeight int64, confirmNum int64) (int64, error)
 	// UpdateDepositStatusToConfirmed 将充值记录状态改为 Confirmed
 	UpdateDepositStatusToConfirmed(ctx context.Context, id int64) error
+
+	GetPendingDeposits(ctx context.Context, chain string, height int64) ([]*Deposit, error)
 }

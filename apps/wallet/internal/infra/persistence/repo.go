@@ -160,3 +160,18 @@ func (r *Repo) UpdateDepositStatusToConfirmed(ctx context.Context, id int64) err
 
 	return nil
 }
+func (r *Repo) GetPendingDeposits(ctx context.Context, chain string, height int64) ([]*domain.Deposit, error) {
+	db := r.db
+	if tx, ok := ctx.Value("tx_db").(*gorm.DB); ok {
+		db = tx
+	}
+
+	deposits := make([]*domain.Deposit, 0)
+	err := db.WithContext(ctx).Model(&domain.Deposit{}).
+		Where("chain = ? AND status = ? AND block_height <= ?", chain, domain.DepositStatusPending, height).
+		Find(&deposits).Error
+	if err != nil {
+		return nil, err
+	}
+	return deposits, nil
+}

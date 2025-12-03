@@ -8,6 +8,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
+	"gopherex.com/apps/wallet/internal/core/service"
 	"gopherex.com/apps/wallet/internal/domain"
 	"gopherex.com/pkg/logger"
 	"gopherex.com/pkg/safe"
@@ -24,16 +25,17 @@ type Config struct {
 }
 
 type Engine struct {
-	config      *Config
-	redisClinet *redis.Client
-	adapter     domain.ChainAdapter
-	handler     domain.Handler
-	repository  domain.Repository
-	blockChan   chan *domain.StandardBlock
+	config       *Config
+	redisClinet  *redis.Client
+	adapter      domain.ChainAdapter
+	handler      domain.Handler
+	repository   domain.Repository
+	assetService *service.AssetService
+	blockChan    chan *domain.StandardBlock
 }
 
 func New(cfg *Config, r *redis.Client, adapter domain.ChainAdapter,
-	handler domain.Handler, respo domain.Repository) *Engine {
+	handler domain.Handler, respo domain.Repository, assetService *service.AssetService) *Engine {
 	// 对默认的配置进行兜底
 	if cfg.ConsumerCount == 0 {
 		cfg.ConsumerCount = 1
@@ -41,14 +43,14 @@ func New(cfg *Config, r *redis.Client, adapter domain.ChainAdapter,
 	if cfg.StepBlock == 0 {
 		cfg.StepBlock = 1
 	}
-
 	return &Engine{
-		config:      cfg,
-		redisClinet: r,
-		adapter:     adapter,
-		handler:     handler,
-		repository:  respo,
-		blockChan:   make(chan *domain.StandardBlock, cfg.ConfirmNum*2),
+		config:       cfg,
+		redisClinet:  r,
+		adapter:      adapter,
+		handler:      handler,
+		repository:   respo,
+		assetService: assetService,
+		blockChan:    make(chan *domain.StandardBlock, cfg.ConfirmNum*2),
 	}
 }
 
@@ -245,19 +247,21 @@ func (e *Engine) Confirmer(ctx context.Context) {
 				logger.Error(ctx, "Confirmer get tip failed", zap.Error(err))
 				continue
 			}
-
-			// 2. 批量更新数据库
-			// 把所有 (tip - height >= 6) 的 Pending 记录改成 Confirmed
-			count, err := e.repository.ConfirmDeposits(ctx, e.config.Chain, tipHeight, e.config.ConfirmNum)
+			// 查找出来所有待确认的充值记录 且 区块高度小于等于 tipHeight - e.config.ConfirmNum
+			deposits, err := e.repository.GetPendingDeposits(ctx, e.config.Chain, tipHeight-e.config.ConfirmNum)
 			if err != nil {
-				logger.Error(ctx, "Confirmer update db failed", zap.Error(err))
+				logger.Error(ctx, "Confirmer get pending deposits failed", zap.Error(err))
 				continue
 			}
-
-			if count > 0 {
-				logger.Info(ctx, "✅ 充值到账确认", zap.Int64("count", count), zap.Int64("current_tip", tipHeight))
-				// TODO: 这里可以发 Kafka 通知账户系统加钱
+			// 遍历所有待确认的充值记录 调用资产服务进行结算
+			for _, deposit := range deposits {
+				err := e.assetService.SettleDeposit(ctx, deposit)
+				if err != nil {
+					logger.Error(ctx, "Confirmer settle deposit failed", zap.Error(err))
+					continue
+				}
 			}
+
 		}
 	}
 }

@@ -79,3 +79,24 @@ CREATE TABLE IF NOT EXISTS `user_assets` (
   -- 一个用户一种币只有一行记录
   UNIQUE KEY `uniq_user_coin` (`user_id`, `coin_symbol`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户资产表';
+
+-- 5. [新增] 提现记录表 (Day 17 核心)
+-- 跟踪每一笔提现的状态 
+-- ========================================== 
+CREATE TABLE IF NOT EXISTS `withdraws` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `user_id` bigint NOT NULL COMMENT '用户ID',
+  `chain` varchar(10) NOT NULL COMMENT '链: BTC, ETH',
+  `symbol` varchar(20) NOT NULL COMMENT '币种: BTC, USDT',
+  `amount` decimal(36,18) NOT NULL COMMENT '提现金额',
+  `fee` decimal(36,18) NOT NULL COMMENT '提现手续费',
+  `to_address` varchar(100) NOT NULL COMMENT '提现到账地址',
+  `tx_hash` varchar(100) NOT NULL DEFAULT '' COMMENT '链上交易Hash',
+  `status` tinyint NOT NULL DEFAULT 0 COMMENT '0:Applying(申请中), 1:Audited(审核通过), 2:Processing(广播中), 3:Confirmed(已确认), 4:Failed(失败), 5:Rejected(驳回)',
+  `error_msg` varchar(255) NOT NULL DEFAULT '' COMMENT '失败或驳回原因',
+  `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_user_status` (`user_id`, `status`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='提现记录表';

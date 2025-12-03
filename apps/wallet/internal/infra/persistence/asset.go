@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/shopspring/decimal"
@@ -40,4 +41,38 @@ func (r *Repo) AddBalance(ctx context.Context, uid int64, symbol string, amount 
 		return xerr.New(xerr.DbError, fmt.Sprintf("add balance failed: %v", err))
 	}
 	return nil
+}
+
+// 🔥 新增：GetBalance 实现
+func (r *Repo) GetBalance(ctx context.Context, uid int64, symbol string) (*domain.UserAsset, error) {
+	// 1. 获取 DB (支持事务传播)
+	db := r.db
+	if tx, ok := ctx.Value("tx_db").(*gorm.DB); ok {
+		db = tx
+	}
+
+	var asset domain.UserAsset
+	err := db.WithContext(ctx).
+		Where("user_id = ? AND coin_symbol = ?", uid, symbol).
+		First(&asset).Error
+
+	if err != nil {
+		// 2. 🔥 核心逻辑：处理“查无此记录”
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 这不是一个错误。返回一个“零值”的资产对象
+			// WithdrawService 会拿到 {Available: 0, Version: 0}
+			return &domain.UserAsset{
+				UserID:     uid,
+				CoinSymbol: symbol,
+				Available:  decimal.Zero,
+				Frozen:     decimal.Zero,
+				Version:    0, // 初始版本号为 0
+			}, nil
+		}
+		// 3. 其他数据库错误
+		return nil, xerr.New(xerr.DbError, fmt.Sprintf("get balance failed: %v", err))
+	}
+
+	// 4. 成功找到记录
+	return &asset, nil
 }
