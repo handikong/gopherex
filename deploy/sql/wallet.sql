@@ -81,17 +81,7 @@ CREATE TABLE `scans` (
 
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `user_addresses` (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `user_id` bigint NOT NULL COMMENT '用户ID',
-  `chain` varchar(10) NOT NULL COMMENT '链: BTC, ETH',
-  `address` varchar(100) NOT NULL COMMENT '生成的充值地址',
-  `pkh_idx` int NOT NULL COMMENT 'HD钱包路径索引 (通常=UserID)',
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uniq_user_chain` (`user_id`,`chain`),
-  UNIQUE KEY `uniq_address` (`address`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户充值地址表';
+
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
