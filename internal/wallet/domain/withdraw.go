@@ -36,7 +36,7 @@ type Withdraw struct {
 }
 
 // WithdrawRepo 提现仓储接口
-type WithdrawRepo interface {
+type w interface {
 	// FreezeBalance 原子性冻结余额（核心）
 	// 使用乐观锁 (version) 确保数据一致性
 	FreezeBalance(ctx context.Context, asset *UserAsset, freezeAmount decimal.Decimal) error

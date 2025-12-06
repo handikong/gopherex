@@ -8,17 +8,18 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
-	"gopherex.com/apps/wallet/internal/domain"
+	"gopherex.com/internal/wallet/domain"
+	"gopherex.com/internal/wallet/repo"
 	"gopherex.com/pkg/logger"
 	"gopherex.com/pkg/xerr"
 )
 
 type WithdrawService struct {
-	repo        domain.WalletRepo // 使用 Day 16 优化的聚合接口
+	repo        repo.Repo // 使用 Day 16 优化的聚合接口
 	redisClinet *redis.Client
 }
 
-func NewWithdrawService(repo domain.WalletRepo, redisClient *redis.Client) *WithdrawService {
+func NewWithdrawService(repo repo.Repo, redisClient *redis.Client) *WithdrawService {
 	return &WithdrawService{repo: repo, redisClinet: redisClient}
 }
 

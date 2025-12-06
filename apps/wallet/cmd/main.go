@@ -76,7 +76,7 @@ func main() {
 	assetService := service.NewAssetService(repo)
 
 	// 4. 初始化 Scanner Engine
-	_ = scanner.New(
+	btcEngine := scanner.New(
 		&scanner.Config{
 			Chain:           "BTC",
 			Interval:        3 * time.Second,
@@ -96,7 +96,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// 2. 初始化 ETH 引擎
+	//2. 初始化 ETH 引擎
 	ethEngine := scanner.New(
 		&scanner.Config{
 			Chain:           "ETH",
@@ -113,7 +113,7 @@ func main() {
 	)
 
 	// 5. 启动引擎
-	// go btcEngine.Start(ctx)
+	go btcEngine.Start(ctx)
 	go ethEngine.Start(ctx)
 
 	// 6. 优雅退出

@@ -32,6 +32,5 @@ func NewRedis(c *Config) *redis.Client {
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		panic("failed to connect redis: " + err.Error())
 	}
-
 	return rdb
 }

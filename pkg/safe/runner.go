@@ -31,3 +31,29 @@ func Go(fn func()) {
 		fn()
 	}()
 }
+
+// GoCtx 安全启动携带 context 的协程，便于在日志中保留请求链路信息。
+func GoCtx(ctx context.Context, fn func(ctx context.Context)) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				stack := string(debug.Stack())
+
+				if logger.Log != nil {
+					logger.Error(ctx, "🚨 GOROUTINE PANIC RECOVERED",
+						zap.Any("panic", r),
+						zap.String("stack", stack),
+					)
+				} else {
+					fmt.Printf("🚨 GOROUTINE PANIC: %v\nStack: %s\n", r, stack)
+				}
+			}
+		}()
+
+		fn(ctx)
+	}()
+}

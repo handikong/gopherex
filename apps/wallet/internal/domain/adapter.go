@@ -46,11 +46,4 @@ type Repository interface {
 	UpdateCursor(ctx context.Context, chain string, height int64, hash string) error
 	// Rollback 回滚：删除 >= height 的所有数据，并将游标重置
 	Rollback(ctx context.Context, chain string, height int64) error
-
-	// 🔥 新增：将符合确认数的 Pending 记录更新为 Confirmed
-	ConfirmDeposits(ctx context.Context, chain string, currentHeight int64, confirmNum int64) (int64, error)
-	// UpdateDepositStatusToConfirmed 将充值记录状态改为 Confirmed
-	UpdateDepositStatusToConfirmed(ctx context.Context, id int64) error
-
-	GetPendingDeposits(ctx context.Context, chain string, height int64) ([]*Deposit, error)
 }

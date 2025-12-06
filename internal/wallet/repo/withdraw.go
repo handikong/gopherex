@@ -1,11 +1,11 @@
-package persistence
+package repo
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/shopspring/decimal"
-	"gopherex.com/apps/wallet/internal/domain"
+	"gopherex.com/internal/wallet/domain"
 	"gopherex.com/pkg/xerr"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -16,11 +16,6 @@ import (
 //
 //	WHERE user_id = ? AND coin_symbol = ? AND available >= ? AND version = ?
 func (r *Repo) FreezeBalance(ctx context.Context, asset *domain.UserAsset, freezeAmount decimal.Decimal) error {
-	db := r.db
-	if tx, ok := ctx.Value("tx_db").(*gorm.DB); ok {
-		db = tx
-	}
-
 	// 准备更新的字段
 	updates := map[string]interface{}{
 		"available": gorm.Expr("available - ?", freezeAmount),
@@ -29,7 +24,7 @@ func (r *Repo) FreezeBalance(ctx context.Context, asset *domain.UserAsset, freez
 	}
 
 	// 执行带乐观锁的更新
-	res := db.WithContext(ctx).Model(&domain.UserAsset{}).
+	res := r.getDb(ctx).WithContext(ctx).Model(&domain.UserAsset{}).
 		Where("user_id = ? AND coin_symbol = ? AND available >= ? AND version = ?",
 			asset.UserID,
 			asset.CoinSymbol,
@@ -51,12 +46,7 @@ func (r *Repo) FreezeBalance(ctx context.Context, asset *domain.UserAsset, freez
 
 // CreateWithdrawOrder 创建提现订单
 func (r *Repo) CreateWithdrawOrder(ctx context.Context, order *domain.Withdraw) error {
-	db := r.db
-	if tx, ok := ctx.Value("tx_db").(*gorm.DB); ok {
-		db = tx
-	}
-
-	if err := db.WithContext(ctx).Create(order).Error; err != nil {
+	if err := r.getDb(ctx).WithContext(ctx).Create(order).Error; err != nil {
 		return xerr.New(xerr.DbError, fmt.Sprintf("create withdraw order failed: %v", err))
 	}
 	return nil
@@ -65,12 +55,8 @@ func (r *Repo) CreateWithdrawOrder(ctx context.Context, order *domain.Withdraw) 
 // 1. FindPendingWithdrawsForUpdate 查找并锁定 (FOR UPDATE SKIP LOCKED)
 func (r *Repo) FindPendingWithdrawsForUpdate(ctx context.Context, chain string, status domain.WithdrawStatus, limit int) ([]domain.Withdraw, error) {
 	var orders []domain.Withdraw
-	db := r.db
-	if tx, ok := ctx.Value("tx_db").(*gorm.DB); ok {
-		db = tx
-	}
 	// 自动复用 ctx 中的事务
-	err := db.WithContext(ctx).
+	err := r.getDb(ctx).WithContext(ctx).
 		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 		Where("chain = ? AND status = ?", chain, status).
 		Limit(limit).
@@ -80,11 +66,7 @@ func (r *Repo) FindPendingWithdrawsForUpdate(ctx context.Context, chain string, 
 
 // 2. UpdateWithdrawStatusBatch 批量更新状态
 func (r *Repo) UpdateWithdrawStatusBatch(ctx context.Context, ids []int64, status domain.WithdrawStatus) error {
-	db := r.db
-	if tx, ok := ctx.Value("tx_db").(*gorm.DB); ok {
-		db = tx
-	}
-	return db.WithContext(ctx).Model(&domain.Withdraw{}).
+	return r.getDb(ctx).WithContext(ctx).Model(&domain.Withdraw{}).
 		Where("id IN ?", ids).
 		Update("status", status).Error
 }
@@ -96,11 +78,7 @@ func (r *Repo) UpdateWithdrawResult(ctx context.Context, id int64, txHash string
 		"status":    status,
 		"error_msg": errMsg,
 	}
-	db := r.db
-	if tx, ok := ctx.Value("tx_db").(*gorm.DB); ok {
-		db = tx
-	}
-	return db.WithContext(ctx).Model(&domain.Withdraw{}).
+	return r.getDb(ctx).WithContext(ctx).Model(&domain.Withdraw{}).
 		Where("id = ?", id).
 		Updates(updates).Error
 }

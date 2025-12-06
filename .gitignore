@@ -36,3 +36,5 @@ go.work.sum
 
 # 配置文件
 apps/wallet/etc
+
+.DS_Store

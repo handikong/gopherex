@@ -60,6 +60,7 @@ func (p *WithdrawProcessor) process(ctx context.Context) {
 }
 
 func (e *WithdrawProcessor) confirmWithdraws(ctx context.Context) {
+	logger.Info(ctx, "提现确认中")
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -67,7 +68,7 @@ func (e *WithdrawProcessor) confirmWithdraws(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			e.confirmWithdraws(ctx)
+			e.confirmWithdrawsBatch(ctx)
 		}
 	}
 }
@@ -98,7 +99,9 @@ func (p *WithdrawProcessor) ProcessBatch(ctx context.Context) {
 
 		// C. 登记广播成功 (状态仍为 Processing, 填入 Hash)
 		logger.Info(ctx, "✅ 广播成功", zap.Int64("id", order.ID), zap.String("hash", txHash))
-		_ = p.withdrawSvc.MarkWithdrawBroadcasted(ctx, order.ID, txHash, domain.WithdrawStatusProcessing, "s")
+		_ = p.withdrawSvc.MarkWithdrawBroadcasted(ctx, order.ID, txHash, domain.WithdrawStatusProcessing, "")
+		//休息 100ms，等待节点 Pending 池更新 Nonce，防止查到旧值
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -110,6 +113,7 @@ func (p *WithdrawProcessor) confirmWithdrawsBatch(ctx context.Context) {
 		// Adapter 需要实现 GetTransactionStatus
 		// 比如返回：StatusSuccess, StatusFailed, StatusPending, StatusNotFound
 		status, err := p.adapter.GetTransactionStatus(ctx, task.TxHash)
+		logger.Info(ctx, "查询出的状态", zap.Any("status", status))
 		if err != nil {
 			continue
 		}
@@ -117,7 +121,6 @@ func (p *WithdrawProcessor) confirmWithdrawsBatch(ctx context.Context) {
 		if status == domain.WithdrawStatusConfirmed {
 			// C. 成功：改状态为 Confirmed (3)
 			p.withdrawSvc.MarkWithdrawBroadcasted(ctx, task.ID, task.TxHash, domain.WithdrawStatusConfirmed, "")
-
 		} else if status == domain.WithdrawStatusFailed {
 			// D. 失败：改状态为 Failed (4) -> 这通常需要人工介入或自动解冻
 			p.withdrawSvc.MarkWithdrawBroadcasted(ctx, task.ID, task.TxHash, domain.WithdrawStatusFailed, "chain execution failed")

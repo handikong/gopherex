@@ -1,0 +1,78 @@
+## 定义钱包服务的docker-compose
+## 定义所有的服务
+services:
+  ## go服务
+  gopherex:
+    build: .
+    container_name: app_wallet
+    depends_on:
+      - mysql-node
+      - redis-node
+      - btc-node
+      - eth-node
+    networks:
+      - wallet-net
+    # 挂在配置文件
+    volumes:
+      - ./apps/wallet/etc/wallet.yaml:/app/wallet.yaml
+  
+  ## 定义mysql
+  mysql-node:
+    image: mysql:8.0
+    container_name: mysql-node
+    environment:
+      MYSQL_ROOT_PASSWORD: "123456"
+      MYSQL_DATABASE: "gopherex_wallet"
+    ports:
+      - 3307:3306
+    networks:
+      - wallet-net
+    volumes:
+      # sql挂在
+      - mysql_data:/var/lib/mysql
+      # 导入sql
+      - ./deploy/sql/wallet.sql:/docker-entrypoint-initdb.d/wallet.sql
+  
+  redis-node:
+    image: redis:alpine
+    container_name: node-redis
+    ports:
+      - 6379:6379
+    networks:
+      - wallet-net
+  
+  # 4. Bitcoin (Regtest)
+  btc-node:
+    image: kylemanna/bitcoind
+    container_name: btc-node
+    command: 
+      -printtoconsole 
+      -regtest=1 
+      -rpcbind=0.0.0.0 
+      -rpcallowip=0.0.0.0/0 
+      -rpcuser=admin 
+      -rpcpassword=123456
+    ports:
+      - "18443:18443"
+    networks:
+      - wallet-net
+
+  # 5. Ethereum (Anvil - Foundry)
+  # 强烈建议这里也用 Docker，保证都在同一个网络里
+  eth-node:
+    image: ghcr.io/foundry-rs/foundry:latest
+    container_name: eth-node
+    # 启动 anvil，监听 0.0.0.0 (必须，否则外部连不上)，出块时间 5秒
+    entrypoint: ["anvil", "--host", "0.0.0.0", "--block-time", "5"] 
+    ports:
+      - "8545:8545"
+    networks:
+      - wallet-net
+## 定义网络
+networks:
+  wallet-net:
+    driver: bridge
+#定义全局文件
+volumes:
+  mysql_data:
+    

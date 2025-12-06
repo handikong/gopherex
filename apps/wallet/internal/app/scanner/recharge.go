@@ -160,7 +160,6 @@ func (e *Engine) Product(ctx context.Context) {
 				// 如果没抢到锁，说明别的节点在处理，或者已经处理过了
 				// 我们直接跳过这个块，去试探下一个 (蛙跳模式)
 				if !locked {
-					logger.Error(ctx, "Get tip height failed", zap.Error(err))
 					// 为了保证本地状态连续，我们还是得更新 currentHeight
 					// 但这里有个风险：如果别的节点处理失败了怎么办？
 					// 商业级方案通常配合 Kafka，这里为了简化 MVP，我们假设别的节点会成功
