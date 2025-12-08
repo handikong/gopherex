@@ -13,7 +13,7 @@ import (
 
 	"gopherex.com/internal/watcher/domain"
 	"gopherex.com/internal/watcher/repo"
-	"gopherex.com/internal/watcher/scaner/strage"
+	"gopherex.com/internal/watcher/scanner/strage"
 	"gopherex.com/internal/watcher/service"
 	"gopherex.com/pkg/logger"
 	"gopherex.com/pkg/safe"

@@ -118,8 +118,8 @@ func (s *UserService) CreateUser(ctx context.Context, username, email, phone, pa
 		if err := s.repo.Save(txCtx, &domain.UserAddress{
 			UserID:  user.ID,
 			Chain:   "BTC",
-			Address:  btcAddr,
-			PkhIdx:   int(user.ID),
+			Address: btcAddr,
+			PkhIdx:  int(user.ID),
 		}); err != nil {
 			return fmt.Errorf("save btc address failed: %w", err)
 		}
@@ -127,8 +127,8 @@ func (s *UserService) CreateUser(ctx context.Context, username, email, phone, pa
 		if err := s.repo.Save(txCtx, &domain.UserAddress{
 			UserID:  user.ID,
 			Chain:   "ETH",
-			Address:  ethAddr,
-			PkhIdx:   int(user.ID),
+			Address: ethAddr,
+			PkhIdx:  int(user.ID),
 		}); err != nil {
 			return fmt.Errorf("save eth address failed: %w", err)
 		}
@@ -182,6 +182,24 @@ func (s *UserService) GetUserByUsername(ctx context.Context, username string) (*
 // GetUserByEmail 根据邮箱获取用户（包含地址）
 func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*UserWithAddresses, error) {
 	user, err := s.repo.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+
+	addresses, err := s.repo.GetByUserID(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &UserWithAddresses{
+		User:      user,
+		Addresses: addresses,
+	}, nil
+}
+
+// GetUserByPhone 根据手机号获取用户（包含地址）
+func (s *UserService) GetUserByPhone(ctx context.Context, phone string) (*UserWithAddresses, error) {
+	user, err := s.repo.GetByPhone(ctx, phone)
 	if err != nil {
 		return nil, err
 	}
@@ -330,7 +348,7 @@ func isNotFoundError(err error) bool {
 
 // contains 简单的字符串包含检查
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && 
+	return len(s) >= len(substr) &&
 		(len(substr) == 0 || indexOf(s, substr) >= 0)
 }
 
@@ -343,4 +361,3 @@ func indexOf(s, substr string) int {
 	}
 	return -1
 }
-

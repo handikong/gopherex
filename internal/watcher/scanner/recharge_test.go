@@ -24,7 +24,7 @@ import (
 	bitcoin "gopherex.com/internal/watcher/chain/btc"
 	ethereum "gopherex.com/internal/watcher/chain/eth"
 	"gopherex.com/internal/watcher/domain"
-	scanner "gopherex.com/internal/watcher/scaner"
+	"gopherex.com/internal/watcher/scanner"
 	"gopherex.com/pkg/logger"
 	"gopherex.com/pkg/orm"
 	"gopherex.com/pkg/xredis"
