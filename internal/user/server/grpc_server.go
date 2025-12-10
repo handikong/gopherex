@@ -2,14 +2,15 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	pb "gopherex.com/api/user/v1"
 	"gopherex.com/internal/user/domain"
 	"gopherex.com/internal/user/service"
+	"gopherex.com/pkg/logger"
 	"gopherex.com/pkg/xerr"
 )
 
@@ -31,8 +32,7 @@ func NewGrpcServer(userSvc *service.UserService) *GrpcServer {
 
 // Register 实现注册接口
 func (s *GrpcServer) Register(ctx context.Context, req *pb.RegisterReq) (*pb.RegisterResp, error) {
-	var a = []int{1, 2, 3}
-	fmt.Println(a[4])
+
 	// 1. 调用业务 Service
 	user, err := s.userSvc.CreateUser(ctx, req.Username, req.Email, req.Phone, req.Password)
 	if err != nil {
@@ -79,7 +79,7 @@ func (s *GrpcServer) UpdatePassword(ctx context.Context, req *pb.UpdatePasswordR
 func (s *GrpcServer) GetUserInfo(ctx context.Context, req *pb.GetUserInfoReq) (*pb.GetUserInfoResp, error) {
 	var userWithAddr *service.UserWithAddresses
 	var err error
-
+	logger.Info(ctx, "请求参数", zap.Any("request", req))
 	// 根据 oneof 查询类型调用不同的 service 方法
 	switch q := req.Query.(type) {
 	case *pb.GetUserInfoReq_UserId:
@@ -97,6 +97,7 @@ func (s *GrpcServer) GetUserInfo(ctx context.Context, req *pb.GetUserInfoReq) (*
 	if err != nil {
 		return nil, s.convertError(err)
 	}
+	logger.Info(ctx, "返回结果", zap.Any("response", userWithAddr))
 
 	return &pb.GetUserInfoResp{
 		User: s.convertUserToProto(userWithAddr),

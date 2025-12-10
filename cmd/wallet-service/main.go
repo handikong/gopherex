@@ -10,20 +10,22 @@ import (
 	sentinels "github.com/alibaba/sentinel-golang/api"
 	"github.com/alibaba/sentinel-golang/core/circuitbreaker"
 	"github.com/alibaba/sentinel-golang/core/flow"
-	"github.com/btcsuite/btcd/chaincfg"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
-	pb "gopherex.com/api/user/v1"
-	"gopherex.com/internal/user/server"
-	"gopherex.com/internal/user/service"
-	"gopherex.com/pkg/hdwallet"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/resolver"
+	userPb "gopherex.com/api/user/v1"
+	pb "gopherex.com/api/wallet/v1"
+	"gopherex.com/internal/wallet/server"
+	"gopherex.com/internal/wallet/service"
 	"gopherex.com/pkg/interceptor"
 	"gopherex.com/pkg/logger"
 	"gopherex.com/pkg/register"
 	"gopherex.com/pkg/register/etcd"
 	"gopherex.com/pkg/trace"
+	"gopherex.com/pkg/xredis"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -44,7 +46,7 @@ func initSentinel() {
 	// - 方案1：提高阈值（临时方案）
 	// - 方案2：使用 WarmUp 模式平滑流量（推荐）
 	// - 方案3：使用 Throttling 模式排队（适合生产环境）
-	resourceName := "/user.v1.User/Login"
+	resourceName := "/user.v1.Wallet/GetRechargeListById"
 	log.Printf("🔧 配置限流规则 - 资源名称: %s, QPS阈值: 200", resourceName)
 
 	_, err = flow.LoadRules([]*flow.Rule{
@@ -85,14 +87,11 @@ func initSentinel() {
 
 	log.Println("✅ Sentinel 初始化完成，规则已加载")
 }
-
 func main() {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	logger.Init("user-server", "info")
+	logger.Init("wallet-service", "info")
 	defer logger.Sync()
-	logger.Info(ctx, "user-service starting...")
-
+	ctx := context.Background()
+	defer ctx.Done()
 	// 如果你 docker 起的 jaeger 在本机，就用 localhost:4317
 	// 如果跑在 docker compose 网络里，可能是 jaeger:4317
 	shutdownTracer, err := trace.InitTrace("user-service", "localhost:4317")
@@ -109,32 +108,24 @@ func main() {
 	}()
 
 	initSentinel()
-
-	// 1. 初始化 DB
 	dsn := "root:123456@tcp(127.0.0.1:3307)/gopherex_wallet?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai"
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Fatal("DB connect failed: ", err)
 	}
+	rdb := xredis.NewRedis(&xredis.Config{
+		Addr:     "127.0.0.1:6379",
+		Password: "",
+		DB:       0,
+	})
 
-	// 2. 初始化 Wallet SDK (用于生成地址)
-	// 注意：这里需要你的助记词
-	mnemonic := "this father surge entry vehicle cereal return reunion sugar artefact village family"
-	walletSdk, err := hdwallet.New(mnemonic, &chaincfg.RegressionNetParams)
-	if err != nil {
-		log.Fatal("Wallet init failed: ", err)
-	}
-
-	// 3. 依赖注入 (Layered Architecture)
-	userSvc := service.NewUserService(db, walletSdk) // 你的 Service (注意你原来的 NewUserService 参数是否匹配)
-	grpcServerObj := server.NewGrpcServer(userSvc)   // 刚才写的 Glue Code
-
-	// 启动grpc 服务
+	// 设置时间
+	rpcCtx, cancle := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancle()
 	listenHost := "127.0.0.1"
-	listenPort := 9004
+	listenPort := 9002
 	addr := fmt.Sprintf("%s:%d", listenHost, listenPort)
 
-	// 注册etcd服务
 	// 注册服务
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints:   []string{"127.0.0.1:12379"},
@@ -145,23 +136,42 @@ func main() {
 	}
 	defer cli.Close()
 	reg := etcd.NewEtcdRegister(cli, "/gopherex/services", 10)
-	// 4. 注册到 etcd（服务名 = user-service）
+	// 4. 注册到 etcd（服务名 = wallet-service）
 	ins := &register.Instance{
 		ID:   addr, // 简单用 addr 做 ID
-		Name: "user-service",
+		Name: "wallet-service",
 		Addr: addr,
 		MetaData: map[string]string{
 			"version": "v1",
 			"env":     "dev",
 		},
 	}
-	if err := reg.Register(ctx, ins); err != nil {
+	etchCtx := context.Background()
+	if err := reg.Register(etchCtx, ins); err != nil {
 		log.Fatalf("register to etcd error: %v", err)
 	}
-	defer reg.UnRegister(ctx, ins)
+	defer reg.UnRegister(context.Background(), ins)
+
+	// 链接grpc服务
+	resolver.Register(etcd.NewBuilder(cli, "/gopherex/services"))
+	conn, err := grpc.NewClient(
+		"gopherex:///user-service",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()), // client
+		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy": "round_robin"}`),
+	)
+	if err != nil {
+		panic(err)
+	}
+	userClient := userPb.NewUserClient(conn)
+
+	// var userClient = nil
+	rechargeSrv := service.NewRechargeService(db, rdb, rpcCtx, userClient)
+	withdrawSrv := service.NewWithdrawService(db, rdb)
+	grpcServerObj := server.NewGrpcServer(rechargeSrv, withdrawSrv)
 
 	// 4. 启动 gRPC Server
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", listenPort)) // 监听 9001 端口
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", listenPort)) // 监听 9002 端口
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
@@ -169,15 +179,15 @@ func main() {
 		grpc.ChainUnaryInterceptor(
 			interceptor.SentinelUnaryServerInterceptor(),
 		),
-		// opt拦截器
 		grpc.StatsHandler(
 			otelgrpc.NewServerHandler(),
 		),
 	)
-	pb.RegisterUserServer(grpcServer, grpcServerObj) // 注册服务
+	pb.RegisterWalletServer(grpcServer, grpcServerObj) // 注册服务
 
 	fmt.Println("🚀 User Service is running on :9001")
 	if err := grpcServer.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
+
 }

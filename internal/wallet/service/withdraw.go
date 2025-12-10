@@ -12,15 +12,17 @@ import (
 	"gopherex.com/internal/wallet/repo"
 	"gopherex.com/pkg/logger"
 	"gopherex.com/pkg/xerr"
+	"gorm.io/gorm"
 )
 
 type WithdrawService struct {
-	repo        repo.Repo // 使用 Day 16 优化的聚合接口
+	repo        *repo.Repo // 使用 Day 16 优化的聚合接口
 	redisClinet *redis.Client
 }
 
-func NewWithdrawService(repo repo.Repo, redisClient *redis.Client) *WithdrawService {
-	return &WithdrawService{repo: repo, redisClinet: redisClient}
+func NewWithdrawService(db *gorm.DB, redisClient *redis.Client) *WithdrawService {
+	repoDb := repo.New(db)
+	return &WithdrawService{repo: repoDb, redisClinet: redisClient}
 }
 
 // ApplyWithdraw 申请提现

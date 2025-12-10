@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package wallet.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "api/wallet/v1;wallet_v1";
+
+service Wallet {
+  // 获取用户的充值列表
+  rpc GetRechargeListById (RechargeListReq) returns (RechargeListResps);
+  // 申请提现
+  rpc ApplyWithdraw (ApplyWithdrawReq) returns (ApplyWithdrawResp);
+}
+
+// 充值状态
+enum RechargeStatus {
+  RECHARGE_STATUS_UNSPECIFIED = 0;
+  RECHARGE_STATUS_PENDING = 1;
+  RECHARGE_STATUS_CONFIRMED = 2;
+  RECHARGE_STATUS_FAILED = 3;
+}
+
+message RechargeListReq {
+  string uid = 1;
+  string chain = 2;
+  string symbol = 3;
+  RechargeStatus status = 4;
+  int64 page = 5;
+  int64 limit = 6;
+}
+
+// 单条充值记录
+message RechargeListItem {
+  string tx_hash = 1;
+  string from_address = 2;
+  string to_address = 3;
+  int64 to_uid = 4;
+  string chain = 5;
+  string symbol = 6;
+  string amount = 7;                        // decimal.Decimal 建议字符串存储，保持精度
+  RechargeStatus status = 8;
+  string error_msg = 9;
+  int64 block_height = 10;
+  int32 log_index = 11;
+  google.protobuf.Timestamp created_at = 12;
+}
+
+message RechargeListResps {
+  repeated RechargeListItem items = 1;
+  int64 total = 2;
+}
+
+message ApplyWithdrawReq {
+  int64 uid = 1;
+  string chain = 2;
+  string symbol = 3;
+  string to_address = 4;
+  string amount = 5;                        // decimal.Decimal 建议字符串存储，保持精度
+  string request_id = 6;
+}
+
+message ApplyWithdrawResp {
+  bool success = 1;
+  string error_msg = 2;
+}

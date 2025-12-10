@@ -1,0 +1,3 @@
+{"level":"INFO","ts":"2025-12-10T14:35:04.927+0800","caller":"etcd/resolver.go:125","msg":"wathch到数据了","service":"wallet-service"}
+{"level":"INFO","ts":"2025-12-10T14:35:29.166+0800","caller":"etcd/resolver.go:125","msg":"wathch到数据了","service":"wallet-service"}
+{"level":"INFO","ts":"2025-12-10T15:03:13.491+0800","caller":"service/recharge.go:54","msg":"获取用户信息","service":"wallet-service","request":"user_id:1","respose":"user:{id:1 username:\"cillum ex\" email:\"voluptate deserunt\" phone:\"13581922913\" status:USER_STATUS_ENABLED created_at:1765085002 addresses:{chain:\"BTC\" address:\"bcrt1qfv7qjaq777temta9p9dt4ynjzejlyewpwulkhy\"} addresses:{chain:\"ETH\" address:\"0x2A5c06b356812D1f926EE734d14cCBD9089be1A1\"}}","trace_id":"5cb756888c2101cb56d26de6ee6fc8e2"}
