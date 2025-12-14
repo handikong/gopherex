@@ -1,20 +1,36 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
+	"net/http"
+	"time"
+
+	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
+	"github.com/prometheus/client_golang/prometheus"
+	"gopherex.com/pkg/metrics"
 
 	sentinels "github.com/alibaba/sentinel-golang/api"
 	"github.com/alibaba/sentinel-golang/core/circuitbreaker"
 	"github.com/alibaba/sentinel-golang/core/flow"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	pb "gopherex.com/api/user/v1"
 	"gopherex.com/internal/user/server"
 	"gopherex.com/internal/user/service"
 	"gopherex.com/pkg/hdwallet"
 	"gopherex.com/pkg/interceptor"
+	"gopherex.com/pkg/logger"
+	"gopherex.com/pkg/ratelimit"
+	"gopherex.com/pkg/register"
+	"gopherex.com/pkg/register/etcd"
+	"gopherex.com/pkg/trace"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -78,16 +94,46 @@ func initSentinel() {
 }
 
 func main() {
-	initSentinel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	logger.Init("user-server", "info")
+	defer logger.Sync()
+	logger.Info(ctx, "user-service starting...")
+
+	// 如果你 docker 起的 jaeger 在本机，就用 localhost:4317
+	// 如果跑在 docker compose 网络里，可能是 jaeger:4317
+	shutdownTracer, err := trace.InitTrace("user-service", "localhost:4317")
+	if err != nil {
+		logger.Fatal(ctx, "init tracer error", zap.Error(err))
+	}
+	defer func() {
+		// 最多给 5 秒时间 flush trace
+		c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTracer(c); err != nil {
+			logger.Error(ctx, "shutdown tracer error", zap.Error(err))
+		}
+	}()
+
+	//initSentinel()
+
 	// 1. 初始化 DB
-	dsn := "root:123456@tcp(127.0.0.1:3307)/gopherex_wallet?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai"
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	dsn := "root:123456@tcp(127.0.0.1:3307)/gopherex_wallet?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai&timeout=5s&readTimeout=5s&writeTimeout=5s"
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+		PrepareStmt:            true, // 重要：高并发下减少 SQL prepare 开销（见下）
+		SkipDefaultTransaction: true, // ✅ 必会：读多写少/高并发服务一般开（写操作你自己显式事务）
+	})
 	if err != nil {
 		log.Fatal("DB connect failed: ", err)
 	}
-
-	// 自动建表 (开发阶段用，生产环境请用 SQL 脚本)
-	// db.AutoMigrate(&domain.User{}, &domain.UserAddress{})
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Fatal("DB connect failed: ", err)
+	}
+	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetMaxIdleConns(40)
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+	sqlDB.SetConnMaxIdleTime(1 * time.Minute)
 
 	// 2. 初始化 Wallet SDK (用于生成地址)
 	// 注意：这里需要你的助记词
@@ -101,18 +147,76 @@ func main() {
 	userSvc := service.NewUserService(db, walletSdk) // 你的 Service (注意你原来的 NewUserService 参数是否匹配)
 	grpcServerObj := server.NewGrpcServer(userSvc)   // 刚才写的 Glue Code
 
+	// 启动grpc 服务
+	listenHost := "127.0.0.1"
+	listenPort := 9004
+	addr := fmt.Sprintf("%s:%d", listenHost, listenPort)
+
+	// 注册etcd服务
+	// 注册服务
+	cli, err := clientv3.New(clientv3.Config{
+		Endpoints:   []string{"127.0.0.1:12379"},
+		DialTimeout: 5 * time.Second,
+	})
+	if err != nil {
+		log.Fatalf("connect etcd: %v", err)
+	}
+	defer cli.Close()
+	reg := etcd.NewEtcdRegister(cli, "/gopherex/services", 10)
+	// 4. 注册到 etcd（服务名 = user-service）
+	ins := &register.Instance{
+		ID:   addr, // 简单用 addr 做 ID
+		Name: "user-service",
+		Addr: addr,
+		MetaData: map[string]string{
+			"version": "v1",
+			"env":     "dev",
+		},
+	}
+	if err := reg.Register(ctx, ins); err != nil {
+		log.Fatalf("register to etcd error: %v", err)
+	}
+	defer reg.UnRegister(ctx, ins)
+
 	// 4. 启动 gRPC Server
-	lis, err := net.Listen("tcp", ":9001") // 监听 9001 端口
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", listenPort)) // 监听 9001 端口
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
+	ctxRate, cancelRate := context.WithCancel(context.Background())
+	defer cancelRate()
+	// 限流
+	rl := ratelimit.NewStore(10000, 20000, 10*time.Minute) // 按你服务能力调
+	rl.StartJanitor(ctxRate, time.Minute)
+
+	// 监控
+	srvMetrics := grpcprom.NewServerMetrics()
+	prometheus.MustRegister(srvMetrics)
+
+	metrics.MustRegister()
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
-			interceptor.SentinelUnaryServerInterceptor(),
-			// 明天我们在这里加日志拦截器...
-			// 后天在这里加 Recovery 拦截器...
+			srvMetrics.UnaryServerInterceptor(),
+			interceptor.RecoverUnary(),
+			interceptor.RequestIDServerUnary(),
+			interceptor.RateLimitByMethodUnary(rl, "user-service"),
+			//interceptor.SentinelUnaryServerInterceptor(),
+			interceptor.ErrorUnary(),
+		),
+		// opt拦截器
+		grpc.StatsHandler(
+			otelgrpc.NewServerHandler(),
 		),
 	)
+	// 注册到默认 registry（让 /metrics 能抓到）
+	srvMetrics.InitializeMetrics(grpcServer)
+
+	go func() {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", promhttp.Handler()) // Prometheus 官方 :contentReference[oaicite:4]{index=4}
+		_ = http.ListenAndServe(":2112", mux)
+	}()
+
 	pb.RegisterUserServer(grpcServer, grpcServerObj) // 注册服务
 
 	fmt.Println("🚀 User Service is running on :9001")

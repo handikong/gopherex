@@ -1,0 +1,55 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions-gopherex.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: gopherex-logs
+    static_configs:
+      # user-service 日志
+      - targets:
+          - localhost
+        labels:
+          job: gopherex
+          service: user-service
+          __path__: /var/log/gopherex/user/*.log
+
+      # wallet-service 日志
+      - targets:
+          - localhost
+        labels:
+          job: gopherex
+          service: wallet-service
+          __path__: /var/log/gopherex/wallet/*.log
+
+      # watcher-service 日志（有的话）
+      - targets:
+          - localhost
+        labels:
+          job: gopherex
+          service: watcher-service
+          __path__: /var/log/gopherex/watcher/*.log
+
+
+
+
+
+# docker run -d --name promtail \
+#   --network observability \
+#   -p 3100:3100 \
+
+#   -v /Users/san/code/gopherex/cmd/user-service/logs:/var/log/gopherex/user \
+#   -v /Users/san/code/gopherex/cmd/wallet-service/logs:/var/log/gopherex/wallet \
+#   -v /Users/san/code/gopherex/cmd/watcher-service/logs:/var/log/gopherex/watcher \
+#   \
+#   -v /Users/san/code/gopherex/deploy/promtail/promtail-config.yml:/etc/promtail/config.yml \
+#   grafana/promtail:2.9.0 \
+#   -config.file=/etc/promtail/config.yml
+
+
+

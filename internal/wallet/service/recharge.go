@@ -5,10 +5,14 @@ import (
 	"fmt"
 
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	userPb "gopherex.com/api/user/v1"
 	"gopherex.com/internal/wallet/domain"
 	"gopherex.com/internal/wallet/repo"
 	watcherDomain "gopherex.com/internal/watcher/domain"
-	"gopherex.com/pkg/xerr"
+	"gopherex.com/pkg/common"
+	"gopherex.com/pkg/logger"
 	"gorm.io/gorm"
 )
 
@@ -22,15 +26,17 @@ type UserService interface {
 type RechargeService struct {
 	repo        *repo.Repo // 使用 Day 16 优化的聚合接口
 	redisClinet *redis.Client
-	userService UserService // 用户服务接口（用于后续 gRPC 调用）
+	userClinet  userPb.UserClient
+	rpcCtx      context.Context
 }
 
-func NewRechargeService(db *gorm.DB, redisClient *redis.Client, userService UserService) *RechargeService {
-	repo := repo.New(db)
+func NewRechargeService(db *gorm.DB, redisClient *redis.Client, rcpCtx context.Context, userClient userPb.UserClient) *RechargeService {
+	repos := repo.New(db)
 	return &RechargeService{
-		repo:        repo,
+		repo:        repos,
 		redisClinet: redisClient,
-		userService: userService,
+		userClinet:  userClient,
+		rpcCtx:      rcpCtx,
 	}
 }
 
@@ -38,7 +44,21 @@ func NewRechargeService(db *gorm.DB, redisClient *redis.Client, userService User
 func (r *RechargeService) GetListById(ctx context.Context, uid string,
 	chain string, Symbol string, status domain.RechargeType,
 	page int, limit int) ([]*domain.Recharge, error) {
-	return r.repo.GetRechargeListById(ctx, uid, chain, Symbol, status, page, limit)
+	// 如何调用 GetUserInfo:
+	// 假设我们要通过 user_id 查询用户信息，这里构造正确的 oneof 字段。
+	userReq := &userPb.GetUserInfoReq{
+		Query: &userPb.GetUserInfoReq_UserId{
+			UserId: 1, // 替换为实际 user_id
+		},
+	}
+	// 调用 userClinet.GetUserInfo
+	userResp, err := r.userClinet.GetUserInfo(ctx, userReq)
+	if err != nil {
+		logger.Info(ctx, "获取用户信息", zap.Any("request", userReq), zap.Any("respose", userResp), zap.Error(err))
+		// 这里建议根据实际需求处理错误，例如日志、返回自定义错误等
+		return nil, common.WrapPreserveCode(err, codes.Internal, "调用userClinet.GetUserInfo错误")
+	}
+	return r.repo.GetRechargeListById(ctx, chain, Symbol, status, page, limit)
 }
 
 // CreateDeposit 充值入库
@@ -48,19 +68,23 @@ func (r *RechargeService) GetListById(ctx context.Context, uid string,
 // 使用事务保证强一致性
 func (r *RechargeService) CreateDeposit(ctx context.Context, transfer *watcherDomain.ChainTransfer) (*domain.Recharge, error) {
 	// 1. 根据地址获取用户ID（通过用户服务接口，后续通过 gRPC 调用）
-	if r.userService == nil {
-		return nil, xerr.New(xerr.ServerCommonError, "用户服务未初始化")
-	}
-	uid, err := r.userService.GetUserIDByAddress(ctx, transfer.ToAddress)
+	// if r.userService == nil {
+	// 	return nil, xerr.New(xerr.ServerCommonError, "用户服务未初始化")
+	// }
+	// uid, err := r.userService.GetUserIDByAddress(ctx, transfer.ToAddress)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("get user id by address failed: %w", err)
+	// }
+	// if uid == 0 {
+	// 	return nil, xerr.New(xerr.RequestParamsError, "充值地址无对应用户")
+	// }
+	// todo 后续通过rpc来获取
+	addressInfo, err := r.userClinet.GetUserByAddress(r.rpcCtx, &userPb.GetUserByAddressReq{Address: transfer.ToAddress})
 	if err != nil {
-		return nil, fmt.Errorf("get user id by address failed: %w", err)
+		return nil, err
 	}
-	if uid == 0 {
-		return nil, xerr.New(xerr.RequestParamsError, "充值地址无对应用户")
-	}
-
+	uid := addressInfo.UserId
 	var deposit *domain.Recharge
-
 	// 2. 开启事务
 	err = r.repo.Transaction(ctx, func(txCtx context.Context) error {
 		// A. 创建充值记录（状态为0：Pending）

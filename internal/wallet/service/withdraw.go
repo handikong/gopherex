@@ -8,19 +8,22 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
 	"gopherex.com/internal/wallet/domain"
 	"gopherex.com/internal/wallet/repo"
 	"gopherex.com/pkg/logger"
 	"gopherex.com/pkg/xerr"
+	"gorm.io/gorm"
 )
 
 type WithdrawService struct {
-	repo        repo.Repo // 使用 Day 16 优化的聚合接口
+	repo        *repo.Repo // 使用 Day 16 优化的聚合接口
 	redisClinet *redis.Client
 }
 
-func NewWithdrawService(repo repo.Repo, redisClient *redis.Client) *WithdrawService {
-	return &WithdrawService{repo: repo, redisClinet: redisClient}
+func NewWithdrawService(db *gorm.DB, redisClient *redis.Client) *WithdrawService {
+	repoDb := repo.New(db)
+	return &WithdrawService{repo: repoDb, redisClinet: redisClient}
 }
 
 // ApplyWithdraw 申请提现
@@ -36,11 +39,11 @@ func (s *WithdrawService) ApplyWithdraw(ctx context.Context, uid int64, chain, s
 	// 过期时间设为 24小时 (足够覆盖网络重试周期)
 	isNew, err := s.redisClinet.SetNX(ctx, cacheKey, "processing", 24*time.Hour).Result()
 	if err != nil {
-		return xerr.New(xerr.ServerCommonError, "系统繁忙") // Redis 报错，为了安全可以选择降级或报错
+		return xerr.New(codes.Internal, "系统繁忙") // Redis 报错，为了安全可以选择降级或报错
 	}
 	if !isNew {
 		// Redis 里已经有了，直接拦截，不走数据库
-		return xerr.New(xerr.ServerCommonError, "重复的请求，请稍后查询结果")
+		return xerr.New(codes.AlreadyExists, "重复的请求，请稍后查询结果")
 	}
 
 	// TODO: 1. 计算手续费 (Fee)
@@ -60,7 +63,7 @@ func (s *WithdrawService) ApplyWithdraw(ctx context.Context, uid int64, chain, s
 		// B. 检查余额
 		totalCost := amount.Add(fee)
 		if asset.Available.LessThan(totalCost) {
-			return xerr.New(xerr.RequestParamsError, "可用余额不足")
+			return xerr.New(codes.InvalidArgument, "可用余额不足")
 		}
 
 		// C. 冻结余额 (核心步骤)

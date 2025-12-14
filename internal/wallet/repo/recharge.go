@@ -64,9 +64,9 @@ func (r *Repo) GetPendingDeposits(ctx context.Context, chain string, height int6
 	return deposits, nil
 }
 
-func (r *Repo) GetRechargeListById(ctx context.Context, uid string, chain string, Symbol string, status domain.RechargeType, page int, limit int) ([]*domain.Recharge, error) {
+func (r *Repo) GetRechargeListById(ctx context.Context, chain string, Symbol string, status domain.RechargeType, page int, limit int) ([]*domain.Recharge, error) {
 	rechargeList := make([]*domain.Recharge, 0, limit)
-	db := r.getDb(ctx).WithContext(ctx).Model(&domain.Recharge{}).Where("uid = ? AND status = ?", uid, status)
+	db := r.getDb(ctx).WithContext(ctx).Model(&domain.Recharge{}).Where(" status = ?", status)
 	if chain != "" {
 		db = db.Where("chain = ?", chain)
 	}

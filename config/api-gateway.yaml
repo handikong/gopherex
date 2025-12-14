@@ -1,0 +1,17 @@
+name: "api-gateway"
+http:
+  addr: ":8080"
+rpcServices:
+  basePath: /gopherex/services
+  userService: gopherex:///user-service
+  walletService: gopherex:///wallet-service
+
+etcd:
+  endpoints:
+    - "127.0.0.1:12379"
+  dial_timeout_seconds: 5
+
+trace:
+  host: 127.0.0.1:4317
+
+

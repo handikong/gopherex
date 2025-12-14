@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: "gopherex-services"
+    static_configs:
+      - targets: ["host.docker.internal:2112"]
+        labels:
+          service: "user-service"
+      - targets: ["host.docker.internal:2113"]
+        labels:
+          service: "wallet-service"
+      - targets: [ "host.docker.internal:8080" ]
+        labels:
+          service: "gateway"

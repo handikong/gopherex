@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"golang.org/x/crypto/bcrypt"
+	"google.golang.org/grpc/codes"
 	"gopherex.com/internal/user/domain"
 	"gopherex.com/internal/user/repo"
 	"gopherex.com/pkg/hdwallet"
@@ -36,19 +37,19 @@ type UserWithAddresses struct {
 func (s *UserService) CreateUser(ctx context.Context, username, email, phone, password string) (*domain.User, error) {
 	// 1. 验证参数
 	if username == "" {
-		return nil, xerr.New(xerr.RequestParamsError, "用户名不能为空")
+		return nil, xerr.New(codes.Internal, "用户名不能为空")
 	}
 	if email == "" {
-		return nil, xerr.New(xerr.RequestParamsError, "邮箱不能为空")
+		return nil, xerr.New(codes.Internal, "邮箱不能为空")
 	}
 	if password == "" {
-		return nil, xerr.New(xerr.RequestParamsError, "密码不能为空")
+		return nil, xerr.New(codes.Internal, "密码不能为空")
 	}
 
 	// 2. 检查用户名是否已存在
 	_, err := s.repo.GetByUsername(ctx, username)
 	if err == nil {
-		return nil, xerr.New(xerr.RequestParamsError, "用户名已存在")
+		return nil, xerr.New(codes.Internal, "用户名已存在")
 	}
 	// 如果错误不是"用户不存在"，说明是其他错误，需要返回
 	if err != nil && !isNotFoundError(err) {
@@ -58,7 +59,7 @@ func (s *UserService) CreateUser(ctx context.Context, username, email, phone, pa
 	// 3. 检查邮箱是否已存在
 	_, err = s.repo.GetByEmail(ctx, email)
 	if err == nil {
-		return nil, xerr.New(xerr.RequestParamsError, "邮箱已存在")
+		return nil, xerr.New(codes.Internal, "邮箱已存在")
 	}
 	if err != nil && !isNotFoundError(err) {
 		return nil, err
@@ -68,7 +69,7 @@ func (s *UserService) CreateUser(ctx context.Context, username, email, phone, pa
 	if phone != "" {
 		_, err = s.repo.GetByPhone(ctx, phone)
 		if err == nil {
-			return nil, xerr.New(xerr.RequestParamsError, "手机号已存在")
+			return nil, xerr.New(codes.Internal, "手机号已存在")
 		}
 		if err != nil && !isNotFoundError(err) {
 			return nil, err
@@ -99,7 +100,7 @@ func (s *UserService) CreateUser(ctx context.Context, username, email, phone, pa
 
 		// 6.2 生成 BTC 和 ETH 地址
 		if s.wallet == nil {
-			return xerr.New(xerr.ServerCommonError, "钱包服务未初始化")
+			return xerr.New(codes.Internal, "钱包服务未初始化")
 		}
 
 		// 生成 BTC 地址
@@ -242,18 +243,18 @@ func (s *UserService) Login(ctx context.Context, account, password, ip string) (
 	// 尝试手机号
 	user, err = s.repo.GetByPhone(ctx, account)
 	if err != nil {
-		return nil, xerr.New(xerr.RequestParamsError, "账号或密码错误")
+		return nil, xerr.New(codes.Internal, "账号或密码错误")
 	}
 
 verifyPassword:
 	// 2. 验证密码
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return nil, xerr.New(xerr.RequestParamsError, "账号或密码错误")
+		return nil, xerr.New(codes.Internal, "账号或密码错误")
 	}
 
 	// 3. 检查用户状态
 	if user.Status != domain.UserStatusEnabled {
-		return nil, xerr.New(xerr.RequestParamsError, "用户已被禁用")
+		return nil, xerr.New(codes.Internal, "用户已被禁用")
 	}
 
 	// 4. 更新最后登录信息
@@ -286,7 +287,7 @@ func (s *UserService) UpdateUser(ctx context.Context, user *domain.User) error {
 	if user.Email != "" {
 		existingUser, err := s.repo.GetByEmail(ctx, user.Email)
 		if err == nil && existingUser.ID != user.ID {
-			return xerr.New(xerr.RequestParamsError, "邮箱已被使用")
+			return xerr.New(codes.Internal, "邮箱已被使用")
 		}
 	}
 
@@ -294,7 +295,7 @@ func (s *UserService) UpdateUser(ctx context.Context, user *domain.User) error {
 	if user.Phone != "" {
 		existingUser, err := s.repo.GetByPhone(ctx, user.Phone)
 		if err == nil && existingUser.ID != user.ID {
-			return xerr.New(xerr.RequestParamsError, "手机号已被使用")
+			return xerr.New(codes.Internal, "手机号已被使用")
 		}
 	}
 
@@ -312,7 +313,7 @@ func (s *UserService) UpdatePassword(ctx context.Context, userID int64, oldPassw
 
 	// 2. 验证旧密码
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(oldPassword)); err != nil {
-		return xerr.New(xerr.RequestParamsError, "原密码错误")
+		return xerr.New(codes.Internal, "原密码错误")
 	}
 
 	// 3. 加密新密码

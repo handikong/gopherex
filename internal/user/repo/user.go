@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"google.golang.org/grpc/codes"
 	"gopherex.com/internal/user/domain"
 	"gopherex.com/pkg/xerr"
 	"gorm.io/gorm"
@@ -15,9 +16,9 @@ func (r *Repo) Create(ctx context.Context, user *domain.User) error {
 	err := r.getDb(ctx).WithContext(ctx).Create(user).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			return xerr.New(xerr.RequestParamsError, "用户名、邮箱或手机号已存在")
+			return xerr.New(codes.AlreadyExists, "用户名、邮箱或手机号已存在")
 		}
-		return xerr.New(xerr.DbError, fmt.Sprintf("create user failed: %v", err))
+		return xerr.New(codes.Internal, fmt.Sprintf("create user failed: %v", err))
 	}
 	return nil
 }
@@ -31,9 +32,9 @@ func (r *Repo) GetByID(ctx context.Context, id int64) (*domain.User, error) {
 
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, xerr.New(xerr.RequestParamsError, "用户不存在")
+			return nil, xerr.New(codes.NotFound, "用户不存在")
 		}
-		return nil, xerr.New(xerr.DbError, fmt.Sprintf("get user by id failed: %v", err))
+		return nil, xerr.New(codes.Internal, fmt.Sprintf("get user by id failed: %v", err))
 	}
 	return &user, nil
 }
@@ -47,9 +48,9 @@ func (r *Repo) GetByUsername(ctx context.Context, username string) (*domain.User
 
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, xerr.New(xerr.RequestParamsError, "用户不存在")
+			return nil, xerr.New(codes.Internal, "用户不存在")
 		}
-		return nil, xerr.New(xerr.DbError, fmt.Sprintf("get user by username failed: %v", err))
+		return nil, xerr.New(codes.Internal, fmt.Sprintf("get user by username failed: %v", err))
 	}
 	return &user, nil
 }
@@ -63,9 +64,9 @@ func (r *Repo) GetByEmail(ctx context.Context, email string) (*domain.User, erro
 
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, xerr.New(xerr.RequestParamsError, "用户不存在")
+			return nil, xerr.New(codes.Internal, "用户不存在")
 		}
-		return nil, xerr.New(xerr.DbError, fmt.Sprintf("get user by email failed: %v", err))
+		return nil, xerr.New(codes.Internal, fmt.Sprintf("get user by email failed: %v", err))
 	}
 	return &user, nil
 }
@@ -79,9 +80,9 @@ func (r *Repo) GetByPhone(ctx context.Context, phone string) (*domain.User, erro
 
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, xerr.New(xerr.RequestParamsError, "用户不存在")
+			return nil, xerr.New(codes.Internal, "用户不存在")
 		}
-		return nil, xerr.New(xerr.DbError, fmt.Sprintf("get user by phone failed: %v", err))
+		return nil, xerr.New(codes.Internal, fmt.Sprintf("get user by phone failed: %v", err))
 	}
 	return &user, nil
 }
@@ -99,9 +100,9 @@ func (r *Repo) Update(ctx context.Context, user *domain.User) error {
 
 	if err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			return xerr.New(xerr.RequestParamsError, "用户名、邮箱或手机号已存在")
+			return xerr.New(codes.Internal, "用户名、邮箱或手机号已存在")
 		}
-		return xerr.New(xerr.DbError, fmt.Sprintf("update user failed: %v", err))
+		return xerr.New(codes.Internal, fmt.Sprintf("update user failed: %v", err))
 	}
 	return nil
 }
@@ -114,10 +115,10 @@ func (r *Repo) UpdateStatus(ctx context.Context, id int64, status domain.UserSta
 		Update("status", status)
 
 	if res.Error != nil {
-		return xerr.New(xerr.DbError, fmt.Sprintf("update user status failed: %v", res.Error))
+		return xerr.New(codes.Internal, fmt.Sprintf("update user status failed: %v", res.Error))
 	}
 	if res.RowsAffected == 0 {
-		return xerr.New(xerr.RequestParamsError, "用户不存在")
+		return xerr.New(codes.Internal, "用户不存在")
 	}
 	return nil
 }
@@ -133,11 +134,10 @@ func (r *Repo) UpdateLastLogin(ctx context.Context, id int64, ip string) error {
 		})
 
 	if res.Error != nil {
-		return xerr.New(xerr.DbError, fmt.Sprintf("update last login failed: %v", res.Error))
+		return xerr.New(codes.Internal, fmt.Sprintf("update last login failed: %v", res.Error))
 	}
 	if res.RowsAffected == 0 {
-		return xerr.New(xerr.RequestParamsError, "用户不存在")
+		return xerr.New(codes.Internal, "用户不存在")
 	}
 	return nil
 }
-

@@ -2,15 +2,14 @@ package server
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	pb "gopherex.com/api/user/v1"
 	"gopherex.com/internal/user/domain"
 	"gopherex.com/internal/user/service"
-	"gopherex.com/pkg/xerr"
+	"gopherex.com/pkg/logger"
 )
 
 // GrpcServer 是 gRPC 的接入层
@@ -31,18 +30,17 @@ func NewGrpcServer(userSvc *service.UserService) *GrpcServer {
 
 // Register 实现注册接口
 func (s *GrpcServer) Register(ctx context.Context, req *pb.RegisterReq) (*pb.RegisterResp, error) {
-	var a = []int{1, 2, 3}
-	fmt.Println(a[4])
+
 	// 1. 调用业务 Service
 	user, err := s.userSvc.CreateUser(ctx, req.Username, req.Email, req.Phone, req.Password)
 	if err != nil {
-		return nil, s.convertError(err)
+		return nil, err
 	}
 
 	// 2. 获取包含地址的用户信息
 	userWithAddr, err := s.userSvc.GetUserByID(ctx, user.ID)
 	if err != nil {
-		return nil, s.convertError(err)
+		return nil, err
 	}
 
 	// 3. 转换数据
@@ -55,7 +53,7 @@ func (s *GrpcServer) Register(ctx context.Context, req *pb.RegisterReq) (*pb.Reg
 func (s *GrpcServer) Login(ctx context.Context, req *pb.LoginReq) (*pb.LoginResp, error) {
 	userWithAddr, err := s.userSvc.Login(ctx, req.Account, req.Password, req.Ip)
 	if err != nil {
-		return nil, s.convertError(err)
+		return nil, err
 	}
 
 	return &pb.LoginResp{
@@ -67,7 +65,7 @@ func (s *GrpcServer) Login(ctx context.Context, req *pb.LoginReq) (*pb.LoginResp
 func (s *GrpcServer) UpdatePassword(ctx context.Context, req *pb.UpdatePasswordReq) (*pb.UpdatePasswordResp, error) {
 	err := s.userSvc.UpdatePassword(ctx, req.UserId, req.OldPassword, req.NewPassword)
 	if err != nil {
-		return nil, s.convertError(err)
+		return nil, err
 	}
 
 	return &pb.UpdatePasswordResp{
@@ -79,7 +77,7 @@ func (s *GrpcServer) UpdatePassword(ctx context.Context, req *pb.UpdatePasswordR
 func (s *GrpcServer) GetUserInfo(ctx context.Context, req *pb.GetUserInfoReq) (*pb.GetUserInfoResp, error) {
 	var userWithAddr *service.UserWithAddresses
 	var err error
-
+	logger.Info(ctx, "请求参数", zap.Any("request", req))
 	// 根据 oneof 查询类型调用不同的 service 方法
 	switch q := req.Query.(type) {
 	case *pb.GetUserInfoReq_UserId:
@@ -95,8 +93,9 @@ func (s *GrpcServer) GetUserInfo(ctx context.Context, req *pb.GetUserInfoReq) (*
 	}
 
 	if err != nil {
-		return nil, s.convertError(err)
+		return nil, err
 	}
+	logger.Info(ctx, "返回结果", zap.Any("response", userWithAddr))
 
 	return &pb.GetUserInfoResp{
 		User: s.convertUserToProto(userWithAddr),
@@ -117,7 +116,7 @@ func (s *GrpcServer) UpdateUserStatus(ctx context.Context, req *pb.UpdateUserSta
 	}
 
 	if err != nil {
-		return nil, s.convertError(err)
+		return nil, err
 	}
 
 	return &pb.UpdateUserStatusResp{
@@ -130,7 +129,7 @@ func (s *GrpcServer) UpdateUserProfile(ctx context.Context, req *pb.UpdateUserPr
 	// 1. 先获取用户信息
 	userWithAddr, err := s.userSvc.GetUserByID(ctx, req.UserId)
 	if err != nil {
-		return nil, s.convertError(err)
+		return nil, err
 	}
 
 	// 2. 更新需要修改的字段
@@ -145,7 +144,7 @@ func (s *GrpcServer) UpdateUserProfile(ctx context.Context, req *pb.UpdateUserPr
 	// 3. 调用更新服务
 	err = s.userSvc.UpdateUser(ctx, user)
 	if err != nil {
-		return nil, s.convertError(err)
+		return nil, err
 	}
 
 	return &pb.UpdateUserProfileResp{
@@ -157,7 +156,7 @@ func (s *GrpcServer) UpdateUserProfile(ctx context.Context, req *pb.UpdateUserPr
 func (s *GrpcServer) GetUserByAddress(ctx context.Context, req *pb.GetUserByAddressReq) (*pb.GetUserByAddressResp, error) {
 	userID, err := s.userSvc.GetUserIDByAddress(ctx, req.Address)
 	if err != nil {
-		return nil, s.convertError(err)
+		return nil, err
 	}
 
 	return &pb.GetUserByAddressResp{
@@ -207,38 +206,3 @@ func (s *GrpcServer) convertUserToProto(u *service.UserWithAddresses) *pb.UserPr
 }
 
 // convertError 将 xerr 错误转换为 gRPC status 错误
-func (s *GrpcServer) convertError(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	// 检查是否是 xerr.CodeError
-	codeErr, ok := err.(*xerr.CodeError)
-	if !ok {
-		// 如果不是 CodeError，检查错误消息
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "不存在") || strings.Contains(errMsg, "无对应") {
-			return status.Error(codes.NotFound, errMsg)
-		}
-		if strings.Contains(errMsg, "密码") || strings.Contains(errMsg, "账号") {
-			return status.Error(codes.Unauthenticated, errMsg)
-		}
-		// 默认返回 Internal 错误
-		return status.Error(codes.Internal, errMsg)
-	}
-
-	// 根据错误码映射 gRPC status code
-	var grpcCode codes.Code
-	switch codeErr.Code {
-	case xerr.RequestParamsError:
-		grpcCode = codes.InvalidArgument
-	case xerr.RecordNotFound:
-		grpcCode = codes.NotFound
-	case xerr.ServerCommonError, xerr.DbError:
-		grpcCode = codes.Internal
-	default:
-		grpcCode = codes.Internal
-	}
-
-	return status.Error(grpcCode, codeErr.Msg)
-}

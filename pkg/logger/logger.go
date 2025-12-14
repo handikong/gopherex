@@ -7,6 +7,9 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	// 新增：从 OpenTelemetry 的 span 里拿 trace_id
+	"go.opentelemetry.io/otel/trace"
 )
 
 // 定义 TraceID 在 Context 中的 Key (后续接入 Go-Zero/OpenTelemetry 时可替换)
@@ -122,11 +125,20 @@ func extractTrace(ctx context.Context, fields *[]zap.Field) {
 	if ctx == nil {
 		return
 	}
-
-	// 尝试获取 TraceID
-	// 在 Go-Zero 中，这里会改成 trace.TraceIDFromContext(ctx)
+	// 1. 优先从 OpenTelemetry 的 Span 中拿 trace_id
+	//    这个前提是: 你后面给 gRPC server/client 挂上了 otelgrpc 的拦截器
+	span := trace.SpanFromContext(ctx)
+	if span != nil {
+		sc := span.SpanContext()
+		if sc.IsValid() {
+			// 追加日志
+			*fields = append(*fields, zap.String("trace_id", sc.TraceID().String()))
+		}
+	}
+	// 2. 兼容在别的地方手动添加了的
 	if traceID, ok := ctx.Value(TraceIdKey).(string); ok && traceID != "" {
-		*fields = append(*fields, zap.String("trace_id", traceID))
+		// 追加日志
+		*fields = append(*fields, zap.String("trace_id_raw", traceID))
 	}
 }
 

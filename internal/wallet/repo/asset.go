@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/shopspring/decimal"
+	"google.golang.org/grpc/codes"
 	"gopherex.com/internal/wallet/domain"
 	"gopherex.com/pkg/xerr"
 	"gorm.io/gorm"
@@ -30,7 +31,7 @@ func (r *Repo) AddBalance(ctx context.Context, uid int64, symbol string, amount 
 	}).Create(&asset).Error
 
 	if err != nil {
-		return xerr.New(xerr.DbError, fmt.Sprintf("add balance failed: %v", err))
+		return xerr.New(codes.Internal, fmt.Sprintf("add balance failed: %v", err))
 	}
 	return nil
 }
@@ -56,7 +57,7 @@ func (r *Repo) GetBalance(ctx context.Context, uid int64, symbol string) (*domai
 			}, nil
 		}
 		// 3. 其他数据库错误
-		return nil, xerr.New(xerr.DbError, fmt.Sprintf("get balance failed: %v", err))
+		return nil, xerr.New(codes.Internal, fmt.Sprintf("get balance failed: %v", err))
 	}
 
 	// 4. 成功找到记录
@@ -82,10 +83,10 @@ func (r *Repo) AddFrozenBalance(ctx context.Context, asset *domain.UserAsset, am
 		Updates(updates)
 
 	if res.Error != nil {
-		return xerr.New(xerr.DbError, fmt.Sprintf("add frozen balance failed: %v", res.Error))
+		return xerr.New(codes.Internal, fmt.Sprintf("add frozen balance failed: %v", res.Error))
 	}
 	if res.RowsAffected == 0 {
-		return xerr.New(xerr.ServerCommonError, "并发冲突，请重试")
+		return xerr.New(codes.Internal, "并发冲突，请重试")
 	}
 
 	return nil
@@ -112,10 +113,10 @@ func (r *Repo) UnfreezeBalanceForDeposit(ctx context.Context, asset *domain.User
 		Updates(updates)
 
 	if res.Error != nil {
-		return xerr.New(xerr.DbError, fmt.Sprintf("unfreeze balance failed: %v", res.Error))
+		return xerr.New(codes.Internal, fmt.Sprintf("unfreeze balance failed: %v", res.Error))
 	}
 	if res.RowsAffected == 0 {
-		return xerr.New(xerr.ServerCommonError, "并发冲突或冻结金额不足，请重试")
+		return xerr.New(codes.Internal, "并发冲突或冻结金额不足，请重试")
 	}
 
 	return nil
