@@ -40,3 +40,5 @@ apps/wallet/etc
 .DS_Store
 
 *.log
+*.doc
+*.html
