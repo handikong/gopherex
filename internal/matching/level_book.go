@@ -13,7 +13,7 @@ type lvNode struct {
 	next  *lvNode     // 后指针
 	order *Order      // 订单指针
 	lv    *priceLevel // 所属的价格桶
-	side  Side        // 属于卖方还是买方
+	side  uint8       // 属于卖方还是买方
 }
 
 // 入栈 相当于 Add

@@ -2,19 +2,19 @@ package matching
 
 // 定义数据结构
 // 交易类型
-type Side uint8
 
 const (
-	Buy Side = iota + 1
+	Buy = iota + 1
 	Sell
 )
 
 // 订单薄
 type Order struct {
-	ID uint64 // 交易id
-	Side
-	Price int64 //价格
-	Qty   int64 //
+	ID     uint64 // 交易id
+	Side   uint8
+	Price  int64 //价格
+	Qty    int64 //
+	UserID uint64
 }
 
 // 交易

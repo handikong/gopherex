@@ -18,7 +18,7 @@ type lvNodeHeap struct {
 	next  *lvNodeHeap     // 后指针
 	order *Order          // 订单指针
 	lv    *priceLevelHeap // 所属的价格桶
-	side  Side            // 属于卖方还是买方
+	side  uint8           // 属于卖方还是买方
 }
 
 // 使用pool 进行分配
@@ -76,7 +76,7 @@ type LevelOrderBookHeap struct {
 	askH minPriceHeap              // 最新卖价
 	bidH maxPriceHeap              // 最新买价
 	//hasAsk bool                      //是否存在
-	//hasBid bool                      // 有没有对应盘（避免 0 值歧义） 这个不懂
+	//hasBid bool                      // 有没有对应盘（避免 0 值歧义）
 }
 
 func NewLevelOrderHeapBook() *LevelOrderBookHeap {
@@ -413,7 +413,7 @@ func (b *LevelOrderBookHeap) bestBidPrice() (int64, bool) {
 	return 0, false
 }
 
-func (b *LevelOrderBookHeap) getNode(order *Order, lv *priceLevelHeap, side Side) *lvNodeHeap {
+func (b *LevelOrderBookHeap) getNode(order *Order, lv *priceLevelHeap, side uint8) *lvNodeHeap {
 	n := lvNodePool.Get().(*lvNodeHeap)
 	// 必须重置字段：pool 取出来可能带着旧值
 	n.prev, n.next = nil, nil

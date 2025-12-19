@@ -3,7 +3,7 @@ package matching
 import "fmt"
 
 type orderPos struct {
-	side  Side
+	side  uint8
 	index int
 }
 
