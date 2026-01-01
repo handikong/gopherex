@@ -1,0 +1,46 @@
+name: "funds-service"
+addr: ":9999"
+db:
+  type: mysql
+  source_name: "root:123456@tcp(127.0.0.1:3307)/funds_service_db?parseTime=true"
+  max_open_conns: 50
+  max_idle_conns: 50
+  conn_max_lifetime_minutes: 30
+
+redis:
+  Addr: 127.0.0.1:6379
+  db: 0
+  auth: ""
+  pool_size: 50
+  min_idle_conns: 10
+
+otel:
+  enabled: true
+  Addr: 127.0.0.1:4317
+
+etcd:
+  service_prefix: "/gopherex/services"
+  endpoints:
+    - 127.0.0.1:12379
+
+sentinel:
+  flow:                             # 限流配置
+    enabled: true                   # 是否开启限流规则加载
+    rules:                          # 规则列表
+      - resource: "/funds.v1.fundService/GetBalances"  # 资源名=FullMethod（区分大小写）
+        threshold: 1500             # 阈值：direct=QPS，warmup=预热阈值，throttling=速率
+        stat_interval_ms: 1000      # 统计窗口，毫秒
+        strategy: "direct"          # direct | warmup | memory_adaptive（令牌计算策略）
+        control: "throttling"       # reject | warmup | throttling（超限后的行为）
+        max_queue_wait_ms: 20       # throttling 最大排队时间，超时则拒绝
+        warmup_sec: 10              # warmup 预热时长
+        warmup_cold_factor: 3       # warmup 冷启动因子（越大越保守）
+  breaker:                          # 熔断配置
+    enabled: false                  # 是否开启熔断规则加载
+    rules:                          # 熔断规则列表
+      - resource: "/funds.v1.fundService/GetBalances"  # 资源名
+        strategy: "error_ratio"     # error_count | error_ratio | slow_request_ratio
+        threshold: 0.5              # 阈值：比例/次数
+        stat_interval_ms: 1000      # 统计窗口，毫秒
+        min_request_amount: 10      # 统计期内最少请求数，低于不熔断
+        retry_timeout_ms: 5000      # 熔断后等待多久进入半开

@@ -19,10 +19,15 @@ func ErrorUnary() grpc.UnaryServerInterceptor {
 			return resp, nil
 		}
 		st, ok := status.FromError(err)
+		// 限流错误
 		if ok && st.Code() == codes.ResourceExhausted {
 			// 限流是可控拒绝：不打堆栈（最多 debug/warn 一条即可）
 			return nil, err
 		}
+		//// 参数错误
+		//if ok && st.Code() == codes.InvalidArgument {
+		//	return nil, status.Error(codes.InvalidArgument, "参数错误")
+		//}
 
 		rid := RequestIDFromCtx(ctx)
 

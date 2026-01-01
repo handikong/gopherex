@@ -16,7 +16,6 @@ func RateLimitByMethodUnary(store *ratelimit.Store, serviceName string) grpc.Una
 		key := info.FullMethod
 		if !store.Allow(key) {
 			metrics.RateLimitBlockTotal.WithLabelValues(serviceName, info.FullMethod, "token_bucket").Inc()
-
 			// 限流错误语义：ResourceExhausted
 			return nil, xerr.New(codes.ResourceExhausted, "rate limited")
 		}

@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package funds.v1;
+option go_package = "api/fund_service/v1;fundsv1";
+
+import "buf/validate/validate.proto";
+
+message GetBalancesReq {
+  uint64 user_id = 1 [(buf.validate.field).uint64.gt = 0];
+  string asset   = 2 [(buf.validate.field).string.max_len = 16]; // 可选：空表示全部
+}
+message GetBalancesRes {
+  repeated Balance balances = 1;
+}
+message Balance {
+  uint64 user_id = 1;
+  string asset   = 2;
+  string bucket  = 3;
+  int64  amount  = 4;
+}
+
+message ReserveReq {
+  string idempotency_key = 1 [(buf.validate.field).string = {min_len: 1, max_len: 128}];
+  uint64 user_id         = 2 [(buf.validate.field).uint64.gt = 0];
+  string asset           = 3 [(buf.validate.field).string = {min_len: 1, max_len: 16}];
+  int64  amount          = 4 [(buf.validate.field).int64.gt = 0];
+  string ref_id          = 5 [(buf.validate.field).string.max_len = 128];
+}
+message ReserveResp { string entryset_id = 1; }
+
+message ReleaseReq {
+  string idempotency_key = 1 [(buf.validate.field).string = {min_len: 1, max_len: 128}];
+  uint64 user_id         = 2 [(buf.validate.field).uint64.gt = 0];
+  string asset           = 3 [(buf.validate.field).string = {min_len: 1, max_len: 16}];
+  int64  amount          = 4 [(buf.validate.field).int64.gt = 0];
+  string ref_id          = 5 [(buf.validate.field).string.max_len = 128];
+}
+message ReleaseResp { string entryset_id = 1; }
+
+message SettleTradeReq {
+  // 推荐：fill_id 作为幂等键（每个成交唯一）
+  string fill_id     = 1 [(buf.validate.field).string = {min_len: 1, max_len: 128}];
+
+  uint64 buyer_id    = 2 [(buf.validate.field).uint64.gt = 0];
+  uint64 seller_id   = 3 [(buf.validate.field).uint64.gt = 0];
+
+  string symbol      = 4 [(buf.validate.field).string = {min_len: 1, max_len: 32}];
+  string base        = 5 [(buf.validate.field).string = {min_len: 1, max_len: 16}];
+  string quote       = 6 [(buf.validate.field).string = {min_len: 1, max_len: 16}];
+
+  int64 qty          = 7 [(buf.validate.field).int64.gt = 0];
+  int64 quote_amount = 8 [(buf.validate.field).int64.gt = 0];
+  int64 fee          = 9 [(buf.validate.field).int64.gte = 0];
+
+  // 跨字段约束（CEL）
+  option (buf.validate.message).cel = {
+    id: "settle.buyer_seller_diff"
+    message: "buyer_id must not equal seller_id"
+    expression: "this.buyer_id != this.seller_id"
+  };
+  option (buf.validate.message).cel = {
+    id: "settle.base_quote_diff"
+    message: "base must not equal quote"
+    expression: "this.base != this.quote"
+  };
+  option (buf.validate.message).cel = {
+    id: "settle.fee_le_quote"
+    message: "fee must be <= quote_amount"
+    expression: "this.fee <= this.quote_amount"
+  };
+}
+message SettleTradeResp { string entryset_id = 1; }
+
+service fundService {
+  rpc GetBalances(GetBalancesReq) returns(GetBalancesRes);
+  // 资金冻结
+  rpc Reserve(ReserveReq) returns(ReserveResp);
+  // 资金解冻
+  rpc Release(ReleaseReq) returns(ReleaseResp);
+  // 成交结算（消费撮合事件）
+  rpc SettleTrade(SettleTradeReq) returns(SettleTradeResp);
+}

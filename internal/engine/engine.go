@@ -225,33 +225,6 @@ func cmdWalPath(dir, symbol string) string {
 	return filepath.Join(dir, string(s)+".wal")
 }
 
-//func replayBookFromWAL(path string, book OrderBook) (lastSeq uint64, err error) {
-//	_, err = wal.Replay(path, wal.ReplayOptions{
-//		AllowTruncatedTail: true,
-//	}, func(payload []byte) error {
-//		seq, cmd, err := decodeCmdRecord(payload)
-//		if err != nil {
-//			return err
-//		}
-//		// 只重建状态，不 emit
-//		switch cmd.Type {
-//		case CmdSubmitLimit:
-//			book.SubmitLimit(cmd.ReqID, cmd.OrderID, cmd.UserID, cmd.Side, cmd.Price, cmd.Qty, noopEmitter{})
-//		case CmdCancel:
-//			book.Cancel(cmd.ReqID, cmd.CancelOrderID, noopEmitter{})
-//		}
-//		if seq > lastSeq {
-//			lastSeq = seq
-//		}
-//		return nil
-//	})
-//	if err != nil {
-//		return 0, err
-//	}
-//
-//	return lastSeq, nil
-//}
-
 func replayCmdWALAndFillOutbox(cmdPath string, book OrderBook, outbox Outbox, lastCompleteSeq uint64, code CmdCodec) (lastSeq uint64, err error) {
 	_, err = wal.Replay(cmdPath, wal.ReplayOptions{
 		AllowTruncatedTail: true,

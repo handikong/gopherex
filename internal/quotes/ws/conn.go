@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"gopherex.com/internal/quotes/wsmetrics"
 )
 
 type Conn struct {
@@ -121,6 +122,8 @@ func (s *Server) ServeWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+	wsmetrics.OnOpen()
+
 	c := NewConn(s.Hub, wsConn)
 	go s.writePump(c)
 	go s.readPump(c)
@@ -139,6 +142,7 @@ func (s *Server) readPump(c *Conn) {
 	_ = c.ws.SetReadDeadline(time.Now().Add(s.PongWait))
 	c.ws.SetPongHandler(func(string) error {
 		c.lastPongUnix.Store(time.Now().UnixNano())
+		wsmetrics.PongRecvTotal.Inc()
 		_ = c.ws.SetReadDeadline(time.Now().Add(s.PongWait))
 		return nil
 	})
@@ -173,8 +177,10 @@ func (s *Server) readPump(c *Conn) {
 		switch msg.Type {
 		case "sub":
 			c.hub.Subscribe(c, msg.Topics)
+			wsmetrics.SubOpsTotal.WithLabelValues("sub").Inc()
 		case "unsub":
 			c.hub.Unsubscribe(c, msg.Topics)
+			wsmetrics.SubOpsTotal.WithLabelValues("unsub").Inc()
 		}
 	}
 }
@@ -206,8 +212,8 @@ func (s *Server) writePump(c *Conn) {
 	for {
 		select {
 		case <-c.notify:
+			start := time.Now()
 			batch := c.flushLatest(maxFlush)
-
 			if len(batch) == 0 {
 				continue
 			}
@@ -219,8 +225,10 @@ func (s *Server) writePump(c *Conn) {
 				log.Printf("NextWriter err: %v", err)
 				return
 			}
+			bytes := 0
 
 			for i, payload := range batch {
+				bytes += len(payload) + 1
 				if i > 0 {
 					// 用换行分隔多条 JSON
 					if _, err := w.Write([]byte("\n")); err != nil {
@@ -236,6 +244,7 @@ func (s *Server) writePump(c *Conn) {
 					log.Printf("writer2 close err: %v", err)
 					return
 				}
+				wsmetrics.ObserveWrite(len(batch), bytes, time.Since(start), err)
 			}
 
 			if err := w.Close(); err != nil {
@@ -243,7 +252,9 @@ func (s *Server) writePump(c *Conn) {
 			}
 		case <-ticker.C:
 			_ = c.ws.SetWriteDeadline(time.Now().Add(s.WriteWait))
+			wsmetrics.PingSentTotal.Inc()
 			if err := c.ws.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(s.WriteWait)); err != nil {
+				wsmetrics.PingErrorsTotal.Inc()
 				log.Printf("WriteControl ping err: %v", err)
 				return
 			}

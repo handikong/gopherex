@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopherex.com/internal/quotes/gateway"
 	"gopherex.com/internal/quotes/ws"
 )
@@ -38,9 +39,15 @@ func main() {
 		}
 	}()
 
+	//prometheus.MustRegister(
+	//	collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	//	collectors.NewGoCollector(),
+	//)
+
 	// http server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", wss.ServeWS)
+	mux.Handle("/metrics", promhttp.Handler())
 
 	// pprof
 	mux.HandleFunc("/debug/pprof/", pprof.Index)

@@ -1,170 +1,59 @@
--- MySQL dump 10.13  Distrib 8.0.44, for Linux (x86_64)
---
--- Host: localhost    Database: gopherex_wallet
--- ------------------------------------------------------
--- Server version	8.0.44
+-- 建议：单独建库
+-- CREATE DATABASE order_service_db CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+-- USE order_service_db;
 
-/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
-/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
-/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
-/*!50503 SET NAMES utf8mb4 */;
-/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
-/*!40103 SET TIME_ZONE='+00:00' */;
-/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
-/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
-/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
-/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+-- 订单主表：订单状态机（NEW / PARTIAL / FILLED / CANCELED / REJECTED）
+CREATE TABLE IF NOT EXISTS orders (
+  order_id      BIGINT UNSIGNED NOT NULL COMMENT '订单ID（雪花/自增/发号器均可），全局唯一',
+  idem_key      VARCHAR(128) NOT NULL COMMENT '下单幂等键（Idempotency-Key 或 client_order_id），同一键只产生一个订单',
+  user_id       BIGINT UNSIGNED NOT NULL COMMENT '用户ID',
+  symbol        VARCHAR(16) NOT NULL COMMENT '交易对，例如 BTCUSDT / ETHUSDT',
+  side          TINYINT UNSIGNED NOT NULL COMMENT '方向：1=BUY 2=SELL',
+  ord_type      TINYINT UNSIGNED NOT NULL COMMENT '订单类型：1=LIMIT 2=MARKET',
+  tif           TINYINT UNSIGNED NOT NULL COMMENT '有效方式：1=GTC 2=IOC 3=FOK',
+  price_ticks   BIGINT NOT NULL COMMENT '限价单价格（tick为最小单位）；市价单可填0',
+  qty_lots      BIGINT UNSIGNED NOT NULL COMMENT '下单数量（lot为最小单位）',
+  remaining_lots BIGINT UNSIGNED NOT NULL COMMENT '剩余未成交数量（lot为最小单位）',
+  status        TINYINT UNSIGNED NOT NULL COMMENT '状态：1=NEW 2=PARTIAL 3=FILLED 4=CANCELED 5=REJECTED',
+  reject_code   INT NOT NULL DEFAULT 0 COMMENT '拒单码（0=未拒单）；用于可观测与前端提示',
+  created_at    TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间',
+  updated_at    TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间',
+  PRIMARY KEY (order_id),
+  UNIQUE KEY uk_orders_idem (idem_key),
+  KEY idx_orders_user_time (user_id, created_at),
+  KEY idx_orders_symbol_time (symbol, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+COMMENT='订单主表：记录下单请求与订单状态机';
 
---
--- Table structure for table `deposits`
---
+-- 下单幂等结果缓存表：存“第一次成功响应”
+-- 好处：重试时直接返回同一份 response（可包含order_id/状态/提示等）
+CREATE TABLE IF NOT EXISTS order_idempotency (
+  idem_key    VARCHAR(128) NOT NULL COMMENT '幂等键（请求唯一标识）',
+  order_id    BIGINT UNSIGNED NOT NULL COMMENT '对应订单ID',
+  http_code   INT NOT NULL COMMENT '第一次响应的HTTP状态码（如200/400）',
+  resp_json   JSON NOT NULL COMMENT '第一次响应体（可包含order_id、reject_code等）',
+  created_at  TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间',
+  PRIMARY KEY (idem_key),
+  KEY idx_idem_order (order_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+COMMENT='下单幂等结果：同一 idem_key 重试直接返回第一次结果';
 
-DROP TABLE IF EXISTS `deposits`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `deposits` (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `chain` varchar(10) NOT NULL COMMENT '链: BTC, ETH',
-  `symbol` varchar(20) NOT NULL COMMENT '币种: BTC, USDT, ETH',
-  `tx_hash` varchar(100) NOT NULL COMMENT '交易哈希',
-  `log_index` int NOT NULL DEFAULT '0' COMMENT '日志索引(BTC固定0, ETH Log有索引)',
-  `from_address` varchar(100) NOT NULL DEFAULT '' COMMENT '发送方',
-  `to_address` varchar(100) NOT NULL COMMENT '接收方(我们的充值地址)',
-  `amount` decimal(36,18) NOT NULL COMMENT '金额(高精度)',
-  `block_height` bigint NOT NULL COMMENT '区块高度',
-  `status` tinyint NOT NULL DEFAULT '0' COMMENT '0:Pending(确认中), 1:Confirmed(已入账)',
-  `error_msg` varchar(255) NOT NULL DEFAULT '' COMMENT '错误信息',
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uniq_tx` (`chain`,`tx_hash`,`log_index`),
-  KEY `idx_address` (`to_address`),
-  KEY `idx_status` (`status`)
-) ENGINE=InnoDB AUTO_INCREMENT=1258 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='充值记录表';
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `deposits`
---
-
-
-/*!40000 ALTER TABLE `deposits` ENABLE KEYS */;
-
---
--- Table structure for table `scans`
---
-
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `scans` (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `chain` varchar(10) NOT NULL COMMENT '链: BTC, ETH',
-  `current_height` bigint NOT NULL COMMENT '当前已处理的高度',
-  `current_hash` varchar(100) NOT NULL DEFAULT '' COMMENT '当前块Hash(用于防分叉回滚)',
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uniq_chain` (`chain`)
-) ENGINE=InnoDB AUTO_INCREMENT=2358 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='区块扫描游标表';
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `scans`
---
-
-/*!40000 ALTER TABLE `scans` DISABLE KEYS */;
-
-/*!40000 ALTER TABLE `scans` ENABLE KEYS */;
-
---
--- Table structure for table `user_addresses`
---
-
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `user_addresses`
---
-
-/*!40000 ALTER TABLE `user_addresses` DISABLE KEYS */;
-INSERT INTO `user_addresses` VALUES (1,1,'EHT','0x5fc8d32690cc91d4c39d9d3abcbd16989f875707',1,'2025-12-02 12:34:02'),(2,2,'BTC','bcrt1qy0vmja86vjzmk0eftqdef8ukp3xcajg6us33eu',2,'2025-12-03 08:41:22');
-/*!40000 ALTER TABLE `user_addresses` ENABLE KEYS */;
-
---
--- Table structure for table `user_assets`
---
-
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `user_assets` (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `user_id` bigint NOT NULL COMMENT '用户ID',
-  `coin_symbol` varchar(20) NOT NULL COMMENT '币种: BTC, ETH, USDT',
-  `available` decimal(36,18) NOT NULL DEFAULT '0.000000000000000000' COMMENT '可用余额',
-  `frozen` decimal(36,18) NOT NULL DEFAULT '0.000000000000000000' COMMENT '冻结余额(下单/提现冻结)',
-  `version` bigint NOT NULL DEFAULT '0' COMMENT '乐观锁版本号',
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uniq_user_coin` (`user_id`,`coin_symbol`)
-) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户资产表';
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `user_assets`
---
-
-/*!40000 ALTER TABLE `user_assets` DISABLE KEYS */;
+-- （可选但强烈建议）Outbox：订单服务对外发布“订单状态变化事件”
+-- 用于可靠通知下游（WS、用户中心、审计等），避免“DB写成功但消息没发”
+CREATE TABLE IF NOT EXISTS order_outbox (
+  id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '自增主键（用于顺序扫描）',
+  event_id     VARCHAR(64) NOT NULL COMMENT '事件ID（建议=order_id:version 或 hash）',
+  event_type   VARCHAR(32) NOT NULL COMMENT '事件类型：ORDER_CREATED/ORDER_UPDATED/ORDER_REJECTED 等',
+  aggregate_id BIGINT UNSIGNED NOT NULL COMMENT '聚合根ID（这里是 order_id）',
+  payload      JSON NOT NULL COMMENT '事件载荷（给下游用）',
+  status       TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '状态：1=PENDING 2=SENT 3=FAILED',
+  created_at   TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间',
+  sent_at      TIMESTAMP(6) NULL DEFAULT NULL COMMENT '发送时间',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_outbox_event (event_id),
+  KEY idx_outbox_status_id (status, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+COMMENT='订单Outbox：可靠发布订单事件（配合publisher轮询/游标）';
 
 
---
--- Table structure for table `withdraws`
---
 
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `withdraws` (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `user_id` bigint NOT NULL COMMENT '用户ID',
-  `chain` varchar(10) NOT NULL COMMENT '链: BTC, ETH',
-  `symbol` varchar(20) NOT NULL COMMENT '币种: BTC, USDT',
-  `amount` decimal(36,18) NOT NULL COMMENT '提现金额',
-  `fee` decimal(36,18) NOT NULL COMMENT '提现手续费',
-  `to_address` varchar(100) NOT NULL COMMENT '提现到账地址',
-  `tx_hash` varchar(100) NOT NULL DEFAULT '' COMMENT '链上交易Hash',
-  `status` tinyint NOT NULL DEFAULT '0' COMMENT '0:Applying(申请中), 1:Audited(审核通过), 2:Processing(广播中), 3:Confirmed(已确认), 4:Failed(失败), 5:Rejected(驳回)',
-  `error_msg` varchar(255) NOT NULL DEFAULT '' COMMENT '失败或驳回原因',
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_user_status` (`user_id`,`status`),
-  KEY `idx_status` (`status`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='提现记录表';
-/*!40101 SET character_set_client = @saved_cs_client */;
-
-
-ALTER TABLE withdraws 
-ADD COLUMN request_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT '幂等键/业务流水号';
-
--- 2. 🔥 建立唯一索引 (核心)
--- 这一步不仅防止重复，还利用 B+树 提供了极快的查询速度
-CREATE UNIQUE INDEX idx_withdraw_request_id ON withdraws(request_id);
-
---
--- Dumping data for table `withdraws`
---
-
-
-/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
-
-/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
-/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
-/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
-/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
-/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
-/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
-/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
-
--- Dump completed on 2025-12-04  9:36:58

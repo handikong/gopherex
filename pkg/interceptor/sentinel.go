@@ -9,22 +9,22 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"gopherex.com/pkg/logger"
 )
 
 func SentinelUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		// 1. 获取资源名称，通常使用 gRPC 的 FullMethod (例如: /user.UserService/Login)
 		resourceName := info.FullMethod
-
 		// 2. Sentinel 入口 (Entry)
 		// 这里的 sentinel.Entry 会检查所有的规则（限流、熔断等）
 		// 如果被拒绝，blockError 会非空
 		entry, blockError := sentinels.Entry(resourceName, sentinels.WithTrafficType(base.Inbound))
+
 		if blockError != nil {
 			// 用 zap 日志，并返回 ResourceExhausted 错误
-			logger := zap.L()
 			// 打印详细的阻塞信息，帮助调试
-			logger.Warn("request blocked by sentinel",
+			logger.Warn(ctx, "request blocked by sentinel",
 				zap.String("method", resourceName),
 				zap.String("blockType", blockError.BlockType().String()),
 				zap.String("blockMsg", blockError.Error()),

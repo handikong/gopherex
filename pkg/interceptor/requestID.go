@@ -2,7 +2,6 @@ package interceptor
 
 import (
 	"context"
-	"fmt"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -27,7 +26,6 @@ func RequestIDUnary() grpc.UnaryClientInterceptor {
 				}
 			}
 		}
-		fmt.Printf("我是rpc-client 我的rid是%+v\n", rid)
 		if rid != "" {
 			ctx = metadata.AppendToOutgoingContext(ctx, common.MetaRequestID, rid)
 		}
@@ -44,7 +42,6 @@ func RequestIDServerUnary() grpc.UnaryServerInterceptor {
 				rid = vals[0]
 			}
 		}
-		fmt.Printf("我是rpc-service 我的rid是%+v\n", rid)
 		if rid == "" {
 			rid = common.New()
 		}
