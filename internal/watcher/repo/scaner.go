@@ -16,8 +16,8 @@ func (r *Repo) GetLastCursor(ctx context.Context, chain string, mode string) (in
 	var scan = domain.Scan{}
 	// 查询 scans 表
 	err := r.db.WithContext(ctx).Table("scans").
-		Select("current_height, current_hash").
-		Where("chain = ? and mode=?", chain, mode).
+		Select("current_height").
+		Where("symbol = ?", chain).
 		First(&scan).Error
 
 	if err != nil {
@@ -28,24 +28,23 @@ func (r *Repo) GetLastCursor(ctx context.Context, chain string, mode string) (in
 		return 0, "", xerr.New(xerr.DbError, fmt.Sprintf("query cursor failed: %v", err))
 	}
 
-	return scan.CurrentHeight, scan.CurrentHash, nil
+	return scan.CurrentHeight, "", nil
 }
 
 // UpdateCursor 更新扫描游标 (Upsert: 不存在则插入，存在则更新)
 func (r *Repo) UpdateCursor(ctx context.Context, chain string, height int64, mode string) error {
+	db := r.getDb(ctx).WithContext(ctx)
 	// 使用 GORM 的 Clauses 实现 Upsert (INSERT ON DUPLICATE KEY UPDATE)
 	// 这里的表名 scans 必须和数据库一致
-	// 唯一索引是 chain 和 mode 的组合
+	// 唯一索引是 symbol 的组合
 	scan := map[string]interface{}{
-		"chain":          chain,
-		"mode":           mode,
+		"symbol":         chain,
 		"current_height": height,
-		"current_hash":   "", // hash 暂时为空，后续可以扩展
 	}
 
-	err := r.db.WithContext(ctx).Table("scans").Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "chain"}, {Name: "mode"}}, // 唯一索引列：chain 和 mode 的组合
-		DoUpdates: clause.AssignmentColumns([]string{"current_height", "current_hash", "updated_at"}),
+	err := db.Table("scans").Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "symbol"}}, // 唯一索引列：symbol
+		DoUpdates: clause.AssignmentColumns([]string{"current_height"}),
 	}).Create(&scan).Error
 
 	if err != nil {

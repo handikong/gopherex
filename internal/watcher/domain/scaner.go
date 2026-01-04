@@ -10,7 +10,6 @@ type Scan struct {
 	Mode          string // 扫码模式
 	CurrentHeight int64  //高度
 	CurrentHash   string // hash
-
 }
 
 type ScanStrageWatcher interface {
