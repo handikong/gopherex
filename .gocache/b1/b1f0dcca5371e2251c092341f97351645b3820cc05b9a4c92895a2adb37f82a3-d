@@ -1,6 +1,0 @@
-./client.go
-./conn.go
-./doc.go
-./json.go
-./server.go
-./util.go
